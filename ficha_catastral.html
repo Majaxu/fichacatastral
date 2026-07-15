@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ficha Catastral — Córdoba Capital</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1419; --card:#1a2129; --card2:#212a35; --border:#2d3843;
+    --txt:#e8edf2; --dim:#8b9bab; --accent:#4db8ff; --ok:#4caf7d; --warn:#e6a23c; --bad:#e05c5c;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:var(--bg); color:var(--txt); font-family:'Segoe UI',system-ui,sans-serif; font-size:14px;}
+  header{position:sticky; top:0; z-index:1100; background:var(--card); border-bottom:1px solid var(--border); padding:12px 20px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+  header h1{font-size:16px; font-weight:600; margin-right:8px; white-space:nowrap;}
+  header h1 span{color:var(--accent);}
+  #q{flex:1; min-width:260px; background:var(--bg); border:1px solid var(--border); color:var(--txt); padding:9px 12px; border-radius:8px; font-size:14px;}
+  #q:focus{outline:none; border-color:var(--accent);}
+  button{background:var(--accent); color:#06283d; border:none; padding:9px 18px; border-radius:8px; font-weight:600; cursor:pointer; font-size:14px;}
+  button:hover{filter:brightness(1.1);}
+  #hint{width:100%; color:var(--dim); font-size:12px;}
+  #status{padding:10px 20px; color:var(--dim); display:none;}
+  #candidatos{padding:10px 20px; display:none;}
+  #candidatos .cand{display:block; width:100%; text-align:left; background:var(--card); color:var(--txt); border:1px solid var(--border); margin-bottom:6px; padding:10px 14px; border-radius:8px; font-weight:400;}
+  #candidatos .cand:hover{border-color:var(--accent);}
+  main{max-width:1280px; margin:0 auto; padding:16px 20px 60px; display:none; grid-template-columns:repeat(12,1fr); gap:14px;}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; overflow:hidden;}
+  .card h2{font-size:13px; text-transform:uppercase; letter-spacing:.8px; color:var(--accent); margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;}
+  .card h2 .src{font-size:10px; color:var(--dim); letter-spacing:0; text-transform:none; font-weight:400;}
+  .c12{grid-column:span 12;} .c8{grid-column:span 8;} .c6{grid-column:span 6;} .c4{grid-column:span 4;}
+  @media(max-width:900px){.c8,.c6,.c4{grid-column:span 12;}}
+  .kv{display:grid; grid-template-columns:auto 1fr; gap:4px 16px;}
+  .kv div:nth-child(odd){color:var(--dim);}
+  .kv div:nth-child(even){text-align:right; font-variant-numeric:tabular-nums;}
+  .big{font-size:22px; font-weight:700;}
+  .money{color:var(--ok);}
+  table{width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums;}
+  th{color:var(--dim); font-weight:500; text-align:left; padding:5px 8px; border-bottom:1px solid var(--border); font-size:12px;}
+  td{padding:5px 8px; border-bottom:1px solid rgba(45,56,67,.5);}
+  td.r, th.r{text-align:right;}
+  .tag{display:inline-block; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:600;}
+  .tag.ok{background:rgba(76,175,125,.15); color:var(--ok);}
+  .tag.warn{background:rgba(230,162,60,.15); color:var(--warn);}
+  .tag.bad{background:rgba(224,92,92,.15); color:var(--bad);}
+  .tag.info{background:rgba(77,184,255,.15); color:var(--accent);}
+  #map{height:420px; border-radius:8px; background:#0a0e12;}
+  .nom3{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
+  .nom3 code{background:var(--card2); border:1px solid var(--border); padding:5px 10px; border-radius:6px; cursor:pointer; font-size:13px;}
+  .nom3 code:hover{border-color:var(--accent);}
+  .err{color:var(--bad); font-size:13px;}
+  .empty{color:var(--dim); font-style:italic;}
+  a{color:var(--accent);}
+  .doclink{display:block; background:var(--card2); border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:8px; text-decoration:none;}
+  .doclink:hover{border-color:var(--accent);}
+  .doclink small{display:block; color:var(--dim); margin-top:2px;}
+  .spin{display:inline-block; width:14px; height:14px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:sp 0.8s linear infinite; vertical-align:middle;}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .foot{color:var(--dim); font-size:11px; margin-top:10px;}
+  @page{size:A4 portrait; margin:7mm;}
+  @media print{
+    :root{--bg:#fff; --card:#fff; --card2:#f2f4f6; --border:#b9c2ca; --txt:#111; --dim:#556; --accent:#0a5f8f; --ok:#1c7d4d; --warn:#9a6210; --bad:#b03030;}
+    body{background:#fff; color:#111; font-size:9px;}
+    header, #status, #candidatos{display:none !important;}
+    #print-head{display:block !important; padding:0 2px;}
+    #print-head h1{font-size:14px !important; margin-bottom:1px !important;}
+    #print-sub{font-size:8px !important; margin-bottom:6px !important;}
+    main{display:grid !important; max-width:100%; padding:0; gap:5px; zoom:0.82;}
+    .card{break-inside:avoid; border:1px solid var(--border); border-radius:6px; padding:7px 9px;}
+    .card h2{font-size:9px; margin-bottom:5px; letter-spacing:.4px;}
+    .card h2 .src{font-size:7px;}
+    .kv{gap:1px 10px; font-size:9px;}
+    .big{font-size:13px;}
+    .tag{padding:1px 7px; font-size:8px;}
+    .nom3{gap:4px; margin-bottom:6px;}
+    .nom3 code{padding:2px 6px; font-size:9px; cursor:default;}
+    table{font-size:9px;}
+    th{padding:2px 5px; font-size:8px;}
+    td{padding:2px 5px;}
+    #map{height:190px;}
+    #map-foot, .foot{display:none;}
+    .doclink{padding:4px 8px; margin-bottom:3px;}
+    .doclink small{color:#556; font-size:8px; margin-top:0;}
+    a{color:#0a5f8f; text-decoration:none;}
+    .leaflet-control-container{display:none;}
+    strong[style]{font-size:8px !important;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Ficha<span>Catastral</span> CBA</h1>
+  <input id="q" placeholder="Nomenclatura (05-21-008-020 / 0521008020 / 1101010521008020), cuenta de rentas (12 dígitos) o dirección…" onkeydown="if(event.key==='Enter')buscar()">
+  <button onclick="buscar()">Buscar</button>
+  <button id="btnPdf" onclick="window.print()" style="background:var(--card2);color:var(--txt);border:1px solid var(--border)" title="Descargar la ficha en PDF">⬇ PDF</button>
+</header>
+<div id="print-head" style="display:none">
+  <h1 style="font-size:20px;margin-bottom:2px">Ficha Catastral — Córdoba Capital</h1>
+  <div id="print-sub" style="font-size:12px;color:#555;margin-bottom:14px"></div>
+</div>
+
+<div id="status"></div>
+<div id="candidatos"></div>
+
+<main id="ficha">
+  <div class="card c8" id="card-id"><h2>Identificación <span class="src">IDECOR + Muni</span></h2><div class="body"></div></div>
+  <div class="card c4" id="card-deuda"><h2>Deuda Municipal <span class="src">Muni 07/2025</span></h2><div class="body"></div></div>
+  <div class="card c8" id="card-mapa"><h2>Plano del lote</h2><div id="map"></div><div class="foot" id="map-foot"></div></div>
+  <div class="card c4" id="card-val"><h2>Valuación Fiscal <span class="src">IDECOR</span></h2><div class="body"></div></div>
+  <div class="card c6" id="card-sup"><h2>Superficies <span class="src">IDECOR vs Muni</span></h2><div class="body"></div></div>
+  <div class="card c6" id="card-lados"><h2>Lados y Frente <span class="src">Muni capas 37/43</span></h2><div class="body"></div></div>
+  <div class="card c6" id="card-norma"><h2>Normativa Urbana <span class="src">IDECOR / Ord. 8256</span></h2><div class="body"></div></div>
+  <div class="card c6" id="card-extra"><h2>Titular · Patrimonio <span class="src">Muni capa 5 / IDECOR</span></h2><div class="body"></div></div>
+  <div class="card c12" id="card-docs"><h2>Documentos oficiales <span class="src">solucionesgis.cordoba.gob.ar</span></h2><div class="body"></div></div>
+</main>
+
+<script>
+/* ================= CONFIG ================= */
+const IDECOR = 'https://idecor-ws.mapascordoba.gob.ar/geoserver/idecor/wfs';
+const GIS    = 'https://gis.cordoba.gob.ar/server/rest/services';
+const SOLGIS = 'https://solucionesgis.cordoba.gob.ar/parcelarios';
+// Faja 4 (POSGAR/Argentina Zone 4). Las capas Muni e IDECOR sirven en este CRS.
+proj4.defs('FAJA4','+proj=tmerc +lat_0=-90 +lon_0=-63 +k=1 +x_0=4500000 +y_0=0 +ellps=GRS80 +units=m +no_defs');
+const toLL = ([x,y]) => { const [lon,lat]=proj4('FAJA4','WGS84',[x,y]); return [lat,lon]; };
+
+/* ================= HELPERS ================= */
+const $ = s => document.querySelector(s);
+const body = id => $(id+' .body');
+const fmt$ = v => v==null?'—':'$ '+Math.round(v).toLocaleString('es-AR');
+const fmtN = (v,d=0) => v==null?'—':Number(v).toLocaleString('es-AR',{maximumFractionDigits:d,minimumFractionDigits:0});
+const esc  = s => String(s??'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+const spin = '<span class="spin"></span>';
+
+async function wfs(typeName, cql, extra=''){
+  const u = `${IDECOR}?service=WFS&version=1.0.0&request=GetFeature&typeName=${typeName}&outputFormat=application/json&CQL_FILTER=${encodeURIComponent(cql)}${extra}`;
+  const r = await fetch(u);
+  if(!r.ok) throw new Error('IDECOR HTTP '+r.status);
+  const j = await r.json();
+  return j.features || [];
+}
+async function ags(path, params){
+  const usp = new URLSearchParams({f:'json', ...params});
+  const r = await fetch(`${GIS}${path}/query?${usp}`);
+  if(!r.ok) throw new Error('ArcGIS HTTP '+r.status);
+  const j = await r.json();
+  if(j.error) throw new Error('ArcGIS: '+j.error.message);
+  return j.features || [];
+}
+// Query espacial por punto. IMPORTANTE: sin inSR (rompe la query); las capas ya están en faja 4.
+const agsPoint = (path, x, y, outFields='*', extra={}) =>
+  ags(path, {geometry:JSON.stringify({x,y}), geometryType:'esriGeometryPoint',
+             spatialRel:'esriSpatialRelIntersects', outFields, returnGeometry:'false', ...extra});
+
+/* ============ NOMENCLATURA ============ */
+function formatos(s10){
+  const g = `${s10.slice(0,2)}-${s10.slice(2,4)}-${s10.slice(4,7)}-${s10.slice(7,10)}`;
+  return { s10, g, i16:'110101'+s10, manz:g.slice(0,9) };
+}
+function detectar(txt){
+  const t = txt.trim().toUpperCase().replace(/\s+/g,' ');
+  const d = t.replace(/[-.\s]/g,'');
+  if(/^\d{2}-\d{2}-\d{3}-\d{3}$/.test(t)) return {tipo:'nom', n:formatos(d)};
+  if(/^\d{10}$/.test(d)) return {tipo:'nom', n:formatos(d)};
+  if(/^\d{16}$/.test(d)) return {tipo:'nom', n:formatos(d.slice(6))};
+  if(/^\d{12}$/.test(d)) return {tipo:'cuenta', cuenta:d};
+  return {tipo:'dir', dir:t};
+}
+
+/* ============ BÚSQUEDA ============ */
+function setStatus(msg){ const el=$('#status'); el.style.display=msg?'block':'none'; el.innerHTML=msg||''; }
+
+async function buscar(){
+  const txt = $('#q').value;
+  if(!txt.trim()) return;
+  $('#candidatos').style.display='none'; $('#ficha').style.display='none';
+  const det = detectar(txt);
+  try{
+    if(det.tipo==='nom') return cargarFicha(det.n);
+    if(det.tipo==='cuenta'){
+      setStatus(spin+' Buscando cuenta '+det.cuenta+' en IDECOR…');
+      const fs = await wfs('idecor:parcelas', `Nro_Cuenta=${Number(det.cuenta)}`);
+      if(!fs.length) return setStatus('No se encontró parcela para la cuenta '+det.cuenta);
+      if(fs.length>1) return elegirParcela(fs);
+      return cargarFicha(formatos(String(fs[0].properties.Nomenclatura).slice(6)), fs[0]);
+    }
+    // Dirección
+    setStatus(spin+' Geocodificando dirección…');
+    const r = await fetch(`${GIS}/Catastro/Composite_Locator_v2/GeocodeServer/findAddressCandidates?`+
+      new URLSearchParams({SingleLine:det.dir, maxLocations:6, outFields:'StAddr,AddNum', f:'json'}));
+    const j = await r.json();
+    const cands = (j.candidates||[]).filter(c=>c.score>=60);
+    if(!cands.length) return setStatus('No se encontró la dirección. Probá formato "CALLE NÚMERO" sin barrio.');
+    // Auto-seleccionar SOLO si la altura devuelta coincide exactamente con la pedida
+    const numPedido = (det.dir.match(/(\d+)\s*$/)||[])[1];
+    const numDe = c => String(c.attributes?.AddNum ?? (c.address.match(/(\d+)\s*$/)||[])[1] ?? '');
+    const exactos = numPedido ? cands.filter(c=>numDe(c)===numPedido) : [];
+    if(exactos.length===1) return resolverDireccion(exactos[0]);
+    const cont = $('#candidatos'); cont.style.display='block';
+    cont.innerHTML = `<div style="color:var(--dim);margin-bottom:8px">${numPedido&&!exactos.length?`No existe la altura ${numPedido} exacta — direcciones más cercanas:`:'Elegí la dirección:'}</div>` +
+      cands.map((c,i)=>`<button class="cand" onclick='resolverDireccion(window.__cands[${i}])'>${esc(c.address)} <span style="color:var(--dim)">(score ${c.score})</span></button>`).join('');
+    window.__cands = cands; setStatus('');
+  }catch(e){ setStatus('<span class="err">Error: '+esc(e.message)+'</span>'); }
+}
+
+async function resolverDireccion(cand){
+  $('#candidatos').style.display='none';
+  setStatus(spin+' Resolviendo parcela para '+esc(cand.address)+'…');
+  const {x,y} = cand.location;
+  try{
+    // 1º intento: dirección exacta en tabla de unidades (capa 61) → idparcela → parcela (capa 38)
+    let nom = null;
+    try{
+      const u = await ags('/Catastro/Catastro_capas_v3/MapServer/61',
+        {where:`direccioncompleta LIKE '${cand.address.replace(/'/g,"''")}%'`, outFields:'idparcela,direccioncompleta', returnGeometry:'false'});
+      if(u.length){
+        const p38 = await ags('/Catastro/Catastro_capas_v3/MapServer/38',
+          {where:`objectid_parcela=${u[0].attributes.idparcela}`, outFields:'nomenclatura', returnGeometry:'false'});
+        if(p38.length) nom = p38[0].attributes.nomenclatura;
+      }
+    }catch(e){/* sigue al plan B */}
+    // 2º intento: punto del geocoder (con tolerancia, el punto cae al borde de calle)
+    if(!nom){
+      const p = await ags('/Catastro/Catastro_capas_v3/MapServer/38',
+        {geometry:JSON.stringify({x,y}), geometryType:'esriGeometryPoint', spatialRel:'esriSpatialRelIntersects',
+         distance:12, units:'esriSRUnit_Meter', outFields:'nomenclatura', returnGeometry:'false'});
+      if(p.length) nom = p[0].attributes.nomenclatura;
+    }
+    if(!nom) return setStatus('La dirección geocodificó pero no se pudo asociar a una parcela.');
+    cargarFicha(formatos(nom.replace(/-/g,'')));
+  }catch(e){ setStatus('<span class="err">Error: '+esc(e.message)+'</span>'); }
+}
+
+function elegirParcela(fs){
+  const cont=$('#candidatos'); cont.style.display='block';
+  cont.innerHTML='<div style="color:var(--dim);margin-bottom:8px">La cuenta corresponde a varias parcelas:</div>'+
+    fs.map(f=>{const p=f.properties;
+      return `<button class="cand" onclick="cargarFicha(formatos('${String(p.Nomenclatura).slice(6)}'))">${p.Nomenclatura} — ${esc(p.desig_oficial||'')} · ${esc(p.Estado||'')}</button>`;}).join('');
+  setStatus('');
+}
+
+/* ============ FICHA ============ */
+let map=null, N=null, centroLL=null;
+
+async function cargarFicha(n, idecorPreFetched){
+  N = n;
+  setStatus(spin+` Consultando parcela ${n.g}…`);
+  $('#candidatos').style.display='none';
+  document.querySelectorAll('#ficha .body').forEach(b=>b.innerHTML=spin);
+  $('#map-foot').textContent='';
+
+  // --- Núcleo: IDECOR (con geometría) + parcela muni ---
+  let idecor=null, muni38=null;
+  try{
+    const fs = idecorPreFetched ? [idecorPreFetched] : await wfs('idecor:parcelas', `Nomenclatura='${n.i16}'`);
+    idecor = fs[0]||null;
+  }catch(e){ console.warn('IDECOR:',e); }
+  try{
+    const fs = await ags('/Catastro/Catastro_capas_v3/MapServer/38',
+      {where:`nomenclatura='${n.g}'`, outFields:'*', returnGeometry:'true'});
+    muni38 = fs[0]||null;
+  }catch(e){ console.warn('Muni38:',e); }
+
+  if(!idecor && !muni38){ setStatus('<span class="err">No se encontró la parcela '+n.g+' en ninguna fuente.</span>'); return; }
+  setStatus(''); $('#ficha').style.display='grid';
+  document.title = `Ficha ${n.g}`;
+  $('#print-sub').textContent = `${n.g} · ${n.s10} · ${n.i16} — generada ${new Date().toLocaleDateString('es-AR')} · Fuentes: IDECOR + Municipalidad de Córdoba (consulta en vivo)`;
+
+  // Geometría de referencia (faja 4) y centroide.
+  // Para el cruce de lados (capa 37) usar SIEMPRE la geometría Muni: la de IDECOR está desalineada unos cm y pierde lados.
+  let ring=null;
+  if(idecor?.geometry?.coordinates) ring = idecor.geometry.coordinates[0][0];
+  else if(muni38?.geometry?.rings)  ring = muni38.geometry.rings[0];
+  const ringL = muni38?.geometry?.rings?.[0] || ring;
+  const cx = ring ? ring.reduce((s,p)=>s+p[0],0)/ring.length : null;
+  const cy = ring ? ring.reduce((s,p)=>s+p[1],0)/ring.length : null;
+  centroLL = cx!=null ? toLL([cx,cy]) : null;
+
+  renderIdentificacion(idecor, muni38);
+  renderValuacion(idecor);
+  renderMapa(idecor, muni38, ring);
+
+  // --- Resto en paralelo ---
+  const P = idecor?.properties||{};
+  const tareas = {
+    deuda:   ags('/vm_parcelas_deuda_periodo_202507/MapServer/4', {where:`nomenclatura='${n.s10}'`, outFields:'*', returnGeometry:'false'}),
+    edif:    ags('/Catastro/Edificaciones_v2/MapServer/0', {where:`nomenclatu='${n.g}'`, outFields:'superficie,plantas,tipo_sup', returnGeometry:'false'}),
+    titular: ags('/vm_parcelas_ph_deuda_202507/MapServer/5', {where:`nomenclatura='${n.s10}'`, outFields:'nombre_alt,cuit_alt,id_persona_fisica,id_persona_juridica', returnGeometry:'false'}),
+    dirs:    muni38 ? ags('/Catastro/Catastro_capas_v3/MapServer/61', {where:`idparcela=${muni38.attributes.objectid_parcela}`, outFields:'direccioncompleta', returnGeometry:'false'}) : Promise.resolve([]),
+    ocup:    cx!=null ? wfs('idecor:normativas_urbanas_ocupacion_v', `INTERSECTS(geom,POINT(${cx} ${cy}))`) : Promise.resolve([]),
+    usos:    cx!=null ? wfs('idecor:normativas_urbanas_usos_suelos_v', `INTERSECTS(geom,POINT(${cx} ${cy}))`) : Promise.resolve([]),
+    fracc:   cx!=null ? wfs('idecor:normativas_urbanas_fraccionamiento_v', `INTERSECTS(geom,POINT(${cx} ${cy}))`) : Promise.resolve([]),
+    patrim:  cx!=null ? wfs('idecor:cba_inmuebles_catalogados', `INTERSECTS(geom,POINT(${cx} ${cy}))`) : Promise.resolve([]),
+    barrio:  cx!=null ? agsPoint('/Catastro/Barrio/MapServer/0', cx, cy, 'nombre') : Promise.resolve([]),
+    cpc:     cx!=null ? agsPoint('/Catastro/AreaCPC/MapServer/0', cx, cy, 'nombre,numero') : Promise.resolve([]),
+    lados:   ringL ? ags('/Catastro/Catastro_capas_v3/MapServer/37',
+               {geometry:JSON.stringify({rings:[ringL]}), geometryType:'esriGeometryPolygon',
+                spatialRel:'esriSpatialRelIntersects', outFields:'*', returnGeometry:'true'}) : Promise.resolve([]),
+    calles:  ring ? ags('/Catastro/Catastro_capas_v3/MapServer/43',
+               {geometry:JSON.stringify({xmin:Math.min(...ring.map(p=>p[0]))-40, ymin:Math.min(...ring.map(p=>p[1]))-40,
+                                         xmax:Math.max(...ring.map(p=>p[0]))+40, ymax:Math.max(...ring.map(p=>p[1]))+40}),
+                geometryType:'esriGeometryEnvelope', spatialRel:'esriSpatialRelIntersects', outFields:'*', returnGeometry:'true'}) : Promise.resolve([]),
+    vecinos: ring ? ags('/Catastro/Catastro_capas_v3/MapServer/38',
+               {geometry:JSON.stringify({xmin:Math.min(...ring.map(p=>p[0]))-60, ymin:Math.min(...ring.map(p=>p[1]))-60,
+                                         xmax:Math.max(...ring.map(p=>p[0]))+60, ymax:Math.max(...ring.map(p=>p[1]))+60}),
+                geometryType:'esriGeometryEnvelope', spatialRel:'esriSpatialRelIntersects', outFields:'nomenclatura', returnGeometry:'true'}) : Promise.resolve([]),
+  };
+  const res = {};
+  await Promise.all(Object.entries(tareas).map(async ([k,p])=>{ try{res[k]=await p;}catch(e){res[k]={error:e.message};} }));
+
+  renderDeuda(res.deuda);
+  renderSuperficies(P, res.edif, muni38);
+  renderNormativa(res.ocup, res.usos, res.fracc);
+  renderExtra(res.titular, res.patrim);
+  renderLados(res.lados, res.calles, ringL);
+  renderDocs(res.barrio, res.cpc);
+  renderDirecciones(res.dirs);
+  if(res.vecinos && !res.vecinos.error) dibujarVecinos(res.vecinos);
+}
+
+/* ---------- Render de cada card ---------- */
+function copiar(t){ navigator.clipboard?.writeText(t); }
+
+function renderIdentificacion(idecor, muni38){
+  const P = idecor?.properties||{}, A = muni38?.attributes||{};
+  const est = P.Estado||'';
+  const tag = est.includes('BALDIO')?'warn':(est.includes('PH')&&!est.includes('NoPH'))?'info':'ok';
+  body('#card-id').innerHTML = `
+    <div class="nom3">
+      <code onclick="copiar('${N.g}')" title="copiar">${N.g}</code>
+      <code onclick="copiar('${N.s10}')" title="copiar">${N.s10}</code>
+      <code onclick="copiar('${N.i16}')" title="copiar">${N.i16}</code>
+      ${est?`<span class="tag ${tag}">${esc(est)}</span>`:''}
+    </div>
+    <div class="kv">
+      <div>Dirección</div><div id="id-dirs">${spin}</div>
+      <div>Cuenta (rentas)</div><div>${P.Nro_Cuenta??'—'} ${P.Cantidad_Cuentas>1?`<span class="tag info">${P.Cantidad_Cuentas} cuentas (PH)</span>`:''}</div>
+      <div>Designación oficial</div><div>${esc(P.desig_oficial)||'—'} ${A.loteoficial?`· Lote ${esc(A.loteoficial)} Mz ${esc(A.manzanaoficial)}`:''}</div>
+      <div>Tipo</div><div>${esc(P.Tipo_Parcela)||'—'} · ${esc(P.Tipo_Valuacion)||'—'}</div>
+      <div>Alta parcela</div><div>${esc(P.fecha_alta_parcela)||'—'} · Exp. ${esc(P.exp_creacion)||'—'}</div>
+      <div>Barrio / CPC</div><div id="id-barrio">${spin}</div>
+    </div>`;
+}
+function renderDirecciones(dirs){
+  const el = $('#id-dirs'); if(!el) return;
+  if(dirs?.error||!dirs?.length){ el.innerHTML='<span class="empty">sin registro</span>'; return; }
+  const unicas = [...new Set(dirs.map(d=>d.attributes.direccioncompleta))];
+  el.innerHTML = unicas.slice(0,4).map(esc).join('<br>') + (unicas.length>4?` <span class="empty">(+${unicas.length-4})</span>`:'');
+}
+
+function renderDeuda(fs){
+  const el = body('#card-deuda');
+  if(fs?.error){ el.innerHTML=`<span class="err">${esc(fs.error)}</span>`; return; }
+  if(!fs?.length){
+    el.innerHTML = `<div class="big" style="color:var(--ok)">Sin deuda registrada</div>
+      <div class="foot">La parcela no figura en el padrón de deudores (corte 07/2025). Verificar igualmente en Rentas municipal.</div>`;
+    return;
+  }
+  const a = fs[0].attributes;
+  const per = String(a.deuda_historica_periodo||'');
+  const perFmt = per.length===7 ? `${per.slice(4)}/${per.slice(0,4)}` : per;
+  el.innerHTML = `
+    <div class="big" style="color:var(--bad)">${fmt$(a.total_deuda_total)}</div>
+    <div class="kv" style="margin-top:10px">
+      <div>Período más antiguo</div><div>${perFmt}</div>
+      <div>Registros</div><div>${a.cantidad_registros??'—'} (${a.cantidad_con_deuda??'—'} con deuda)</div>
+      <div>Actualizado</div><div>${a.ultima_actualizacion?new Date(a.ultima_actualizacion).toLocaleDateString('es-AR'):'—'}</div>
+    </div>
+    <div class="foot">Deuda histórica total según padrón municipal 07/2025.</div>`;
+}
+
+function renderValuacion(idecor){
+  const el = body('#card-val');
+  if(!idecor){ el.innerHTML='<span class="err">IDECOR no disponible</span>'; return; }
+  const P = idecor.properties;
+  el.innerHTML = `
+    <div class="big money">${fmt$(P.Valuacion)}</div>
+    <div class="kv" style="margin-top:10px">
+      <div>Tierra</div><div>${fmt$(P.Valuacion_Tierra_Urbana)}</div>
+      <div>Mejoras</div><div>${fmt$(P.Valuacion_Mejoras)}</div>
+      <div>VUT vigente</div><div>${fmtN(P.vut_vigente,1)} $/m²</div>
+      <div>Coef. fxf</div><div>${P.fxf??'—'}</div>
+      <div>Vigencia desde</div><div>${P.vigencia_desde?String(P.vigencia_desde).slice(0,10):'—'}</div>
+    </div>
+    <div class="foot">$/m² tierra implícito: ${P.Superficie_Tierra_Urbana?fmt$(P.Valuacion_Tierra_Urbana/P.Superficie_Tierra_Urbana):'—'} · valuación/sup total: ${P.Superficie_Tierra_Urbana?fmt$(P.Valuacion/P.Superficie_Tierra_Urbana):'—'}</div>`;
+}
+
+function renderSuperficies(P, edif, muni38){
+  const el = body('#card-sup');
+  let rows='', tot={};
+  if(edif?.error) rows = `<tr><td colspan="3" class="err">${esc(edif.error)}</td></tr>`;
+  else if(edif?.length){
+    const nombres={CU:'Cubierta',SC:'Semicubierta',G:'Galpón',P:'Pileta',EC:'Espacio común'};
+    edif.forEach(f=>{const a=f.attributes; tot[a.tipo_sup]=(tot[a.tipo_sup]||0)+a.superficie;});
+    rows = Object.entries(tot).map(([t,s])=>
+      `<tr><td>${nombres[t]||t}</td><td class="r">${fmtN(s,1)} m²</td><td class="r">${edif.filter(f=>f.attributes.tipo_sup===t).length} cuerpo/s</td></tr>`).join('');
+  } else rows = '<tr><td colspan="3" class="empty">Sin edificaciones registradas</td></tr>';
+  el.innerHTML = `
+    <div class="kv" style="margin-bottom:12px">
+      <div>Terreno (IDECOR)</div><div>${fmtN(P.Superficie_Tierra_Urbana)} m²</div>
+      <div>Terreno (Muni, geom.)</div><div>${muni38?fmtN(muni38.attributes.superficie,1):'—'} m²</div>
+      <div>Mejoras (IDECOR)</div><div>${fmtN(P.Superficie_Mejoras)} m²</div>
+      <div>Cubierta (Muni Σ CU)</div><div>${fmtN(tot.CU,1)||'—'} m²</div>
+    </div>
+    <table><tr><th>Tipo</th><th class="r">Superficie</th><th class="r">Detalle</th></tr>${rows}</table>`;
+}
+
+function renderNormativa(ocup, usos, fracc){
+  const el = body('#card-norma');
+  const kvBlock = (fs, campos, titulo) => {
+    if(fs?.error) return `<div class="err">${titulo}: ${esc(fs.error)}</div>`;
+    if(!fs?.length) return `<div class="empty">${titulo}: sin datos en el punto</div>`;
+    const p = fs[0].properties;
+    const items = campos ? campos.filter(c=>p[c]!=null).map(c=>`<div>${c}</div><div>${esc(p[c])}</div>`)
+      : Object.entries(p).filter(([k,v])=>v!=null&&k!=='id').map(([k,v])=>`<div>${esc(k)}</div><div>${esc(v)}</div>`);
+    return `<div style="margin-bottom:10px"><strong style="font-size:12px;color:var(--dim)">${titulo}</strong><div class="kv" style="margin-top:4px">${items.join('')}</div></div>`;
+  };
+  let head='';
+  if(ocup?.length){
+    const p = ocup[0].properties;
+    head = `<div class="nom3">
+      <span class="tag info">Zona ${esc(p.zona)}</span>
+      <span class="tag ok">FOT ${esc(p.fot)}</span>
+      <span class="tag ok">FOS ${esc(p.fos)}%</span>
+      <span class="tag warn">Alt. máx ${esc(p.altura_max)} m</span>
+    </div>`;
+  }
+  el.innerHTML = head
+    + kvBlock(ocup, ['ord','denominacion','fot','fos','altura_max','retiros','sup_min','frente_min'], 'Ocupación')
+    + kvBlock(usos, null, 'Usos del suelo')
+    + kvBlock(fracc, null, 'Fraccionamiento');
+}
+
+function renderExtra(tit, patrim){
+  const el = body('#card-extra');
+  let h = '<strong style="font-size:12px;color:var(--dim)">TITULAR (padrón deudores, cobertura parcial)</strong>';
+  if(tit?.error) h += `<div class="err">${esc(tit.error)}</div>`;
+  else if(!tit?.length) h += '<div class="empty">Sin dato — esta fuente solo lista parcelas con deuda vigente</div>';
+  else{
+    const vistos = new Set();
+    h += '<table><tr><th>Nombre</th><th>CUIT</th><th>Tipo</th></tr>';
+    tit.forEach(f=>{const a=f.attributes; const k=a.cuit_alt+a.nombre_alt; if(vistos.has(k)||!a.nombre_alt) return; vistos.add(k);
+      h += `<tr><td>${esc(a.nombre_alt)}</td><td>${esc(a.cuit_alt)||'—'}</td><td>${a.id_persona_juridica?'Jurídica':'Física'}</td></tr>`;});
+    h += '</table><div class="foot">Uso puntual en pantalla — Ley 25.326.</div>';
+  }
+  h += '<div style="margin-top:14px"><strong style="font-size:12px;color:var(--dim)">PATRIMONIO / CATALOGACIÓN</strong>';
+  if(patrim?.error) h += `<div class="err">${esc(patrim.error)}</div>`;
+  else if(!patrim?.length) h += '<div style="margin-top:4px"><span class="tag ok">No catalogado</span> <span class="foot">— sin restricción patrimonial provincial en el punto</span></div>';
+  else{
+    const p = patrim[0].properties;
+    h += `<div style="margin-top:4px"><span class="tag bad">CATALOGADO</span></div><div class="kv" style="margin-top:6px">` +
+      Object.entries(p).filter(([k,v])=>v!=null&&!['id'].includes(k)).map(([k,v])=>`<div>${esc(k)}</div><div>${esc(v)}</div>`).join('') + '</div>';
+  }
+  h += '</div>';
+  el.innerHTML = h;
+}
+
+/* --- Lados y frente: geometría en faja 4 (metros) --- */
+function dist2seg(px,py,ax,ay,bx,by){
+  const dx=bx-ax, dy=by-ay, l2=dx*dx+dy*dy;
+  let t = l2? ((px-ax)*dx+(py-ay)*dy)/l2 : 0; t=Math.max(0,Math.min(1,t));
+  const qx=ax+t*dx, qy=ay+t*dy; return Math.hypot(px-qx,py-qy);
+}
+function distToPolyline(px,py,paths){
+  let m=Infinity;
+  for(const path of paths) for(let i=0;i<path.length-1;i++)
+    m=Math.min(m, dist2seg(px,py,path[i][0],path[i][1],path[i+1][0],path[i+1][1]));
+  return m;
+}
+function renderLados(lados, calles, ring){
+  const el = body('#card-lados');
+  if(!ring){ el.innerHTML='<span class="empty">Sin geometría de parcela</span>'; return; }
+  if(lados?.error){ el.innerHTML=`<span class="err">Capa 37: ${esc(lados.error)}</span>`; return; }
+  if(!lados?.length){ el.innerHTML='<span class="empty">Sin lados registrados</span>'; return; }
+  const ringPath = [...ring, ring[0]];
+  const vistos = new Set();
+  const propios = lados.filter(f=>{
+    const paths = f.geometry?.paths||[]; if(!paths.length) return false;
+    let cerca=0, total=0;
+    for(const path of paths) for(const v of path){ total++; if(distToPolyline(v[0],v[1],[ringPath])<0.9) cerca++; }
+    if(!(total>0 && cerca/total>0.7)) return false;
+    // dedupe de lados compartidos (aparecen 2 veces, uno por parcela lindera)
+    const allV = paths.flat();
+    const key = Math.round(allV.reduce((s,v)=>s+v[0],0)/allV.length)+'|'+Math.round(allV.reduce((s,v)=>s+v[1],0)/allV.length)+'|'+(f.attributes.longitud??'');
+    if(vistos.has(key)) return false;
+    vistos.add(key); return true;
+  });
+  if(!propios.length){ el.innerHTML='<span class="empty">No se pudieron aislar los lados de esta parcela</span>'; return; }
+  const callesOk = (calles&&!calles.error)?calles:[];
+  const filas = propios.map(f=>{
+    const paths=f.geometry.paths, a=f.attributes;
+    const allV = paths.flat();
+    const mx = allV.reduce((s,v)=>s+v[0],0)/allV.length, my = allV.reduce((s,v)=>s+v[1],0)/allV.length;
+    let mejor=null, dmin=Infinity;
+    for(const c of callesOk){
+      const d = distToPolyline(mx,my,c.geometry?.paths||[]);
+      if(d<dmin){ dmin=d; mejor=c; }
+    }
+    const lon = a.longitud ?? a.Longitud ?? allV.slice(1).reduce((s,v,i)=>s+Math.hypot(v[0]-allV[i][0],v[1]-allV[i][1]),0);
+    const nombreCalle = mejor?(mejor.attributes.nombrecalle||mejor.attributes.nombre||''):'';
+    const ancho = mejor?(mejor.attributes.anchoinicial||mejor.attributes.anchofinal||20):20;
+    const esFrente = dmin < (ancho/2)+6;
+    return {lon, nombreCalle, dmin, esFrente};
+  }).sort((a,b)=>(b.esFrente-a.esFrente)||b.lon-a.lon);
+  el.innerHTML = `<table><tr><th></th><th class="r">Longitud</th><th>Calle</th></tr>` +
+    filas.map(f=>`<tr>
+      <td>${f.esFrente?'<span class="tag ok">FRENTE</span>':'<span style="color:var(--dim)">lado</span>'}</td>
+      <td class="r"><strong>${fmtN(f.lon,2)} m</strong></td>
+      <td>${f.esFrente?esc(f.nombreCalle)||'—':'<span style="color:var(--dim)">'+(esc(f.nombreCalle)||'—')+'</span>'}</td></tr>`).join('') +
+    `</table><div class="foot">Longitudes oficiales (capa 37). Frente detectado por paralelismo con el eje de calle.</div>`;
+}
+
+function renderDocs(barrio, cpc){
+  const el = body('#card-docs');
+  const b = (!barrio?.error && barrio?.length) ? barrio[0].attributes.nombre : null;
+  const c = (!cpc?.error && cpc?.length) ? cpc[0].attributes.nombre : null;
+  const idb = $('#id-barrio'); if(idb) idb.textContent = `${b||'—'} · CPC ${c||'—'}`;
+  let h = `<a class="doclink" href="${SOLGIS}/index.php?nomenclatura=${N.manz}" target="_blank">
+      📄 Plancheta catastral (plano de manzana ${N.manz})
+      <small>Abre el visor oficial con todos los planos disponibles de la manzana (manzana, parcelario, nomenclatura)</small></a>`;
+  if(b&&c){
+    const u = `${SOLGIS}/PDF/pdfPlanilla/pdfPlanilla.php?nomenclatura=${N.manz}&cpc=${encodeURIComponent(c)}&barrio=${encodeURIComponent(b)}`;
+    h += `<a class="doclink" href="${u}" target="_blank">
+      📋 Planilla complementaria (PDF directo)
+      <small>Tabla complementaria de la manzana ${N.manz} — ${esc(b)}, CPC ${esc(c)}</small></a>`;
+  } else h += `<div class="empty">Planilla complementaria: no se pudo determinar barrio/CPC.</div>`;
+  if(centroLL){
+    const [lat,lon] = centroLL;
+    h += `<a class="doclink" href="https://www.google.com/maps?q=${lat.toFixed(6)},${lon.toFixed(6)}" target="_blank">
+      🌍 Google Maps <small>Satelital y contexto del lote</small></a>
+    <a class="doclink" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)},${lon.toFixed(6)}" target="_blank">
+      👁️ Street View <small>Fachada y estado del frente desde la calle</small></a>`;
+  }
+  el.innerHTML = h;
+}
+
+/* ---------- Mapa ---------- */
+function renderMapa(idecor, muni38, ring){
+  if(map){ map.remove(); map=null; }
+  map = L.map('map');
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20, maxNativeZoom:19, attribution:'© OSM'}).addTo(map);
+  if(ring){
+    const latlngs = ring.map(toLL);
+    const poly = L.polygon(latlngs,{color:'#4db8ff', weight:2.5, fillOpacity:0.25}).addTo(map);
+    map.fitBounds(poly.getBounds().pad(1.2));
+    const P = idecor?.properties||{};
+    poly.bindPopup(`<b>${N.g}</b><br>${P.desig_oficial||''}<br>${fmtN(P.Superficie_Tierra_Urbana)} m²`);
+    $('#map-foot').textContent = `Geometría ${idecor?'IDECOR':'Muni'} (faja 4 → WGS84) · centroide usado para cruces espaciales`;
+  } else map.setView([-31.42,-64.19],13);
+}
+let capaVecinos=null;
+function dibujarVecinos(fs){
+  if(!map) return;
+  if(capaVecinos) capaVecinos.remove();
+  capaVecinos = L.layerGroup(fs.filter(f=>f.attributes.nomenclatura!==N.g && f.geometry?.rings).map(f=>
+    L.polygon(f.geometry.rings[0].map(toLL),{color:'#8b9bab', weight:1, fillOpacity:0.04, dashArray:'3'})
+      .bindTooltip(f.attributes.nomenclatura||'')
+  )).addTo(map);
+}
+
+/* Autobúsqueda por querystring: ficha.html?q=... */
+const qsP = new URLSearchParams(location.search).get('q');
+if(qsP){ $('#q').value=qsP; buscar(); }
+</script>
+</body>
+</html>
