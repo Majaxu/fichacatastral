@@ -31,7 +31,7 @@
   .card h2{font-size:13px; text-transform:uppercase; letter-spacing:.8px; color:var(--accent); margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;}
   .card h2 .src{font-size:10px; color:var(--dim); letter-spacing:0; text-transform:none; font-weight:400;}
   .c12{grid-column:span 12;} .c8{grid-column:span 8;} .c6{grid-column:span 6;} .c4{grid-column:span 4;}
-  @media(max-width:900px){.c8,.c6,.c4{grid-column:span 12;}}
+  @media screen and (max-width:900px){.c8,.c6,.c4{grid-column:span 12;}}
   .kv{display:grid; grid-template-columns:auto 1fr; gap:4px 16px;}
   .kv div:nth-child(odd){color:var(--dim);}
   .kv div:nth-child(even){text-align:right; font-variant-numeric:tabular-nums;}
@@ -67,7 +67,10 @@
     #print-head{display:block !important; padding:0 2px;}
     #print-head h1{font-size:14px !important; margin-bottom:1px !important;}
     #print-sub{font-size:8px !important; margin-bottom:6px !important;}
-    main{display:grid !important; max-width:100%; padding:0; gap:5px; zoom:0.82;}
+    main{display:grid !important; grid-template-columns:repeat(12,1fr); max-width:100%; padding:0; gap:5px; zoom:0.85;}
+    #card-docs .body{display:grid; grid-template-columns:1fr 1fr; gap:4px;}
+    #card-docs .doclink{margin-bottom:0;}
+    #card-extra table{max-width:100%;}
     .card{break-inside:avoid; border:1px solid var(--border); border-radius:6px; padding:7px 9px;}
     .card h2{font-size:9px; margin-bottom:5px; letter-spacing:.4px;}
     .card h2 .src{font-size:7px;}
@@ -221,12 +224,32 @@ async function resolverDireccion(cand){
         if(p38.length) nom = p38[0].attributes.nomenclatura;
       }
     }catch(e){/* sigue al plan B */}
-    // 2º intento: punto del geocoder (con tolerancia, el punto cae al borde de calle)
+    // 2º intento: punto del geocoder (con tolerancia, el punto cae al borde de calle).
+    // Puede devolver varias parcelas linderas: desambiguar por altura registrada, si no por cercanía.
     if(!nom){
       const p = await ags('/Catastro/Catastro_capas_v3/MapServer/38',
         {geometry:JSON.stringify({x,y}), geometryType:'esriGeometryPoint', spatialRel:'esriSpatialRelIntersects',
-         distance:12, units:'esriSRUnit_Meter', outFields:'nomenclatura', returnGeometry:'false'});
-      if(p.length) nom = p[0].attributes.nomenclatura;
+         distance:12, units:'esriSRUnit_Meter', outFields:'nomenclatura,objectid_parcela', returnGeometry:'true'});
+      if(p.length===1) nom = p[0].attributes.nomenclatura;
+      else if(p.length>1){
+        const alt = (cand.address.match(/(\d+)\s*$/)||[])[1];
+        try{
+          const ids = p.map(f=>f.attributes.objectid_parcela).join(',');
+          const dirs = await ags('/Catastro/Catastro_capas_v3/MapServer/61',
+            {where:`idparcela IN (${ids})`, outFields:'idparcela,direccioncompleta', returnGeometry:'false'});
+          const hit = alt ? dirs.find(d=>new RegExp('\\b'+alt+'\\b').test(d.attributes.direccioncompleta||'')) : null;
+          if(hit) nom = p.find(f=>f.attributes.objectid_parcela===hit.attributes.idparcela)?.attributes.nomenclatura;
+        }catch(e){/* sigue por cercanía */}
+        if(!nom){
+          let best=null, bd=Infinity;
+          for(const f of p){
+            const r=f.geometry?.rings?.[0]||[];
+            const d=r.length?Math.min(...r.map(v=>Math.hypot(v[0]-x,v[1]-y))):Infinity;
+            if(d<bd){bd=d;best=f;}
+          }
+          nom = best?.attributes.nomenclatura;
+        }
+      }
     }
     if(!nom) return setStatus('La dirección geocodificó pero no se pudo asociar a una parcela.');
     cargarFicha(formatos(nom.replace(/-/g,'')));
@@ -469,47 +492,78 @@ function distToPolyline(px,py,paths){
     m=Math.min(m, dist2seg(px,py,path[i][0],path[i][1],path[i+1][0],path[i+1][1]));
   return m;
 }
+function segLen(paths){
+  let L=0;
+  for(const p of paths) for(let i=0;i<p.length-1;i++) L+=Math.hypot(p[i+1][0]-p[i][0],p[i+1][1]-p[i][1]);
+  return L;
+}
+// Reconstruye los lados reales del lote desde su anillo: fusiona tramos colineales, corta en esquinas (>12°)
+function ladosDesdeRing(ring){
+  let pts=[...ring];
+  if(pts.length>1 && pts[0][0]===pts[pts.length-1][0] && pts[0][1]===pts[pts.length-1][1]) pts.pop();
+  const n=pts.length; if(n<3) return [];
+  const ang=i=>{const a=pts[i],b=pts[(i+1)%n];return Math.atan2(b[1]-a[1],b[0]-a[0]);};
+  const esEsquina=i=>{const a1=ang((i-1+n)%n),a2=ang(i);let d=Math.abs(a2-a1);d=Math.min(d,2*Math.PI-d);return d>0.21;};
+  let start=0; for(let i=0;i<n;i++) if(esEsquina(i)){start=i;break;}
+  const sides=[]; let cur=[pts[start]];
+  for(let k=0;k<n;k++){
+    const i=(start+k)%n, nx=pts[(i+1)%n];
+    cur.push(nx);
+    if(esEsquina((i+1)%n)){ sides.push(cur); cur=[nx]; }
+  }
+  if(cur.length>1) sides.push(cur);
+  return sides.map(vs=>({vs, L:segLen([vs]), mid:[(vs[0][0]+vs[vs.length-1][0])/2,(vs[0][1]+vs[vs.length-1][1])/2]}));
+}
 function renderLados(lados, calles, ring){
   const el = body('#card-lados');
   if(!ring){ el.innerHTML='<span class="empty">Sin geometría de parcela</span>'; return; }
-  if(lados?.error){ el.innerHTML=`<span class="err">Capa 37: ${esc(lados.error)}</span>`; return; }
-  if(!lados?.length){ el.innerHTML='<span class="empty">Sin lados registrados</span>'; return; }
-  const ringPath = [...ring, ring[0]];
+  const sides = ladosDesdeRing(ring);
+  if(!sides.length){ el.innerHTML='<span class="empty">No se pudieron derivar los lados</span>'; return; }
+  // Lados oficiales (capa 37), dedupe de copias idénticas (compartidos con linderos)
   const vistos = new Set();
-  const propios = lados.filter(f=>{
-    const paths = f.geometry?.paths||[]; if(!paths.length) return false;
-    let cerca=0, total=0;
-    for(const path of paths) for(const v of path){ total++; if(distToPolyline(v[0],v[1],[ringPath])<0.9) cerca++; }
-    if(!(total>0 && cerca/total>0.7)) return false;
-    // dedupe de lados compartidos (aparecen 2 veces, uno por parcela lindera)
-    const allV = paths.flat();
-    const key = Math.round(allV.reduce((s,v)=>s+v[0],0)/allV.length)+'|'+Math.round(allV.reduce((s,v)=>s+v[1],0)/allV.length)+'|'+(f.attributes.longitud??'');
+  const ladosOk = (lados && !lados.error ? lados : []).filter(f=>{
+    if(!f.geometry?.paths?.length) return false;
+    const allV=f.geometry.paths.flat();
+    const key=Math.round(allV.reduce((s,v)=>s+v[0],0)/allV.length*10)+'|'+Math.round(allV.reduce((s,v)=>s+v[1],0)/allV.length*10)+'|'+Math.round(segLen(f.geometry.paths)*10);
     if(vistos.has(key)) return false;
     vistos.add(key); return true;
   });
-  if(!propios.length){ el.innerHTML='<span class="empty">No se pudieron aislar los lados de esta parcela</span>'; return; }
   const callesOk = (calles&&!calles.error)?calles:[];
-  const filas = propios.map(f=>{
-    const paths=f.geometry.paths, a=f.attributes;
-    const allV = paths.flat();
-    const mx = allV.reduce((s,v)=>s+v[0],0)/allV.length, my = allV.reduce((s,v)=>s+v[1],0)/allV.length;
+  const stl = f => f.attributes['st_length(shape)'] ?? segLen(f.geometry.paths);
+  const filas = sides.map(s=>{
+    const sidePath=[s.vs];
+    // lados oficiales que yacen COMPLETOS sobre este lado del lote
+    const sobre = ladosOk.filter(f=>f.geometry.paths.flat().every(v=>distToPolyline(v[0],v[1],sidePath)<0.9));
+    let lonOf=null, compo=null;
+    if(sobre.length){
+      // 1º: un único lado oficial que cubre todo el lado
+      const full = sobre.find(f=>Math.abs(stl(f)-s.L)<=Math.max(0.6,s.L*0.05));
+      if(full) lonOf = full.attributes.longitud ?? stl(full);
+      else{
+        // 2º: varios tramos que en conjunto componen el lado (lote lindando con varias parcelas)
+        const cover = sobre.reduce((t,f)=>t+stl(f),0);
+        if(cover>=s.L*0.85 && cover<=s.L*1.15){
+          lonOf = sobre.reduce((t,f)=>t+(f.attributes.longitud??stl(f)),0);
+          if(sobre.length>1) compo = sobre.map(f=>fmtN(f.attributes.longitud??stl(f),2));
+        }
+      }
+    }
     let mejor=null, dmin=Infinity;
     for(const c of callesOk){
-      const d = distToPolyline(mx,my,c.geometry?.paths||[]);
+      const d = distToPolyline(s.mid[0],s.mid[1],c.geometry?.paths||[]);
       if(d<dmin){ dmin=d; mejor=c; }
     }
-    const lon = a.longitud ?? a.Longitud ?? allV.slice(1).reduce((s,v,i)=>s+Math.hypot(v[0]-allV[i][0],v[1]-allV[i][1]),0);
     const nombreCalle = mejor?(mejor.attributes.nombrecalle||mejor.attributes.nombre||''):'';
     const ancho = mejor?(mejor.attributes.anchoinicial||mejor.attributes.anchofinal||20):20;
     const esFrente = dmin < (ancho/2)+6;
-    return {lon, nombreCalle, dmin, esFrente};
+    return {lon: lonOf??s.L, aprox: lonOf==null, compo, nombreCalle, esFrente};
   }).sort((a,b)=>(b.esFrente-a.esFrente)||b.lon-a.lon);
   el.innerHTML = `<table><tr><th></th><th class="r">Longitud</th><th>Calle</th></tr>` +
     filas.map(f=>`<tr>
       <td>${f.esFrente?'<span class="tag ok">FRENTE</span>':'<span style="color:var(--dim)">lado</span>'}</td>
-      <td class="r"><strong>${fmtN(f.lon,2)} m</strong></td>
+      <td class="r"><strong>${fmtN(f.lon,2)} m</strong>${f.compo?` <span style="color:var(--dim);font-size:11px">(${f.compo.join(' + ')})</span>`:''}</td>
       <td>${f.esFrente?esc(f.nombreCalle)||'—':'<span style="color:var(--dim)">'+(esc(f.nombreCalle)||'—')+'</span>'}</td></tr>`).join('') +
-    `</table><div class="foot">Longitudes oficiales (capa 37). Frente detectado por paralelismo con el eje de calle.</div>`;
+    `</table><div class="foot">Un renglón por lado real del lote. Medida oficial (capa 37) cuando existe registro; si no, medida geométrica.</div>`;
 }
 
 function renderDocs(barrio, cpc){
