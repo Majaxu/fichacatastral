@@ -132,6 +132,8 @@
 <script>
 /* ================= CONFIG ================= */
 const IDECOR = 'https://idecor-ws.mapascordoba.gob.ar/geoserver/idecor/wfs';
+// Proxy propio (Cloudflare Worker) para el WS de titular/valor locativo de Rentas. Vacío = usa solo capa 5.
+const RENTAS_PROXY = 'https://rentas.mjuarez-e7a.workers.dev';
 const GIS    = 'https://gis.cordoba.gob.ar/server/rest/services';
 const SOLGIS = 'https://solucionesgis.cordoba.gob.ar/parcelarios';
 // Faja 4 (POSGAR/Argentina Zone 4). Las capas Muni e IDECOR sirven en este CRS.
@@ -320,6 +322,7 @@ async function cargarFicha(n, idecorPreFetched){
     deuda:   ags('/vm_parcelas_deuda_periodo_202507/MapServer/4', {where:`nomenclatura='${n.s10}'`, outFields:'*', returnGeometry:'false'}),
     edif:    ags('/Catastro/Edificaciones_v2/MapServer/0', {where:`nomenclatu='${n.g}'`, outFields:'superficie,plantas,tipo_sup', returnGeometry:'false'}),
     titular: ags('/vm_parcelas_ph_deuda_202507/MapServer/5', {where:`nomenclatura='${n.s10}'`, outFields:'nombre_alt,cuit_alt,id_persona_fisica,id_persona_juridica', returnGeometry:'false'}),
+    rentas:  (RENTAS_PROXY && P.Nro_Cuenta) ? fetch(`${RENTAS_PROXY}/cuenta/${P.Nro_Cuenta}`).then(r=>r.json()) : Promise.resolve(null),
     dirs:    muni38 ? ags('/Catastro/Catastro_capas_v3/MapServer/61', {where:`idparcela=${muni38.attributes.objectid_parcela}`, outFields:'direccioncompleta', returnGeometry:'false'}) : Promise.resolve([]),
     ocup:    cx!=null ? wfs('idecor:normativas_urbanas_ocupacion_v', `INTERSECTS(geom,POINT(${cx} ${cy}))`) : Promise.resolve([]),
     usos:    cx!=null ? wfs('idecor:normativas_urbanas_usos_suelos_v', `INTERSECTS(geom,POINT(${cx} ${cy}))`) : Promise.resolve([]),
@@ -345,7 +348,7 @@ async function cargarFicha(n, idecorPreFetched){
   renderDeuda(res.deuda);
   renderSuperficies(P, res.edif, muni38);
   renderNormativa(res.ocup, res.usos, res.fracc);
-  renderExtra(res.titular, res.patrim);
+  renderExtra(res.titular, res.patrim, res.rentas);
   renderLados(res.lados, res.calles, ringL);
   renderDocs(res.barrio, res.cpc);
   renderDirecciones(res.dirs);
@@ -465,17 +468,29 @@ function renderNormativa(ocup, usos, fracc){
     + kvBlock(fracc, null, 'Fraccionamiento');
 }
 
-function renderExtra(tit, patrim){
+function renderExtra(tit, patrim, rentas){
   const el = body('#card-extra');
-  let h = '<strong style="font-size:12px;color:var(--dim)">TITULAR (padrón deudores, cobertura parcial)</strong>';
-  if(tit?.error) h += `<div class="err">${esc(tit.error)}</div>`;
-  else if(!tit?.length) h += '<div class="empty">Sin dato — esta fuente solo lista parcelas con deuda vigente</div>';
-  else{
-    const vistos = new Set();
-    h += '<table><tr><th>Nombre</th><th>CUIT</th><th>Tipo</th></tr>';
-    tit.forEach(f=>{const a=f.attributes; const k=a.cuit_alt+a.nombre_alt; if(vistos.has(k)||!a.nombre_alt) return; vistos.add(k);
-      h += `<tr><td>${esc(a.nombre_alt)}</td><td>${esc(a.cuit_alt)||'—'}</td><td>${a.id_persona_juridica?'Jurídica':'Física'}</td></tr>`;});
-    h += '</table><div class="foot">Uso puntual en pantalla — Ley 25.326.</div>';
+  let h = '';
+  const rd = (rentas && !rentas.error && rentas.data && rentas.data.titular) ? rentas.data : null;
+  if(rd){
+    h += '<strong style="font-size:12px;color:var(--dim)">TITULAR (Rentas Córdoba)</strong>';
+    h += `<table><tr><th>Nombre</th><th>CUIT</th></tr><tr><td>${esc(rd.titular)}</td><td>${esc(rd.cuit)||'—'}</td></tr></table>`;
+    if(rd.valor_locativo_residencial) h += `<div class="kv" style="margin-top:6px">
+      <div>Alquiler ref. residencial</div><div>$ ${esc(rd.valor_locativo_residencial)}/mes</div>
+      <div>Alquiler ref. comercial</div><div>$ ${esc(rd.valor_locativo_comercial)}/mes</div>
+      <div>Vigencia</div><div>${esc(rd.vigencia_valor_locativo)||'—'}</div></div>`;
+    h += '<div class="foot">Uso puntual en pantalla — Ley 25.326.</div>';
+  }else{
+    h += '<strong style="font-size:12px;color:var(--dim)">TITULAR (padrón deudores, cobertura parcial)</strong>';
+    if(tit?.error) h += `<div class="err">${esc(tit.error)}</div>`;
+    else if(!tit?.length) h += '<div class="empty">Sin dato — esta fuente solo lista parcelas con deuda vigente</div>';
+    else{
+      const vistos = new Set();
+      h += '<table><tr><th>Nombre</th><th>CUIT</th><th>Tipo</th></tr>';
+      tit.forEach(f=>{const a=f.attributes; const k=a.cuit_alt+a.nombre_alt; if(vistos.has(k)||!a.nombre_alt) return; vistos.add(k);
+        h += `<tr><td>${esc(a.nombre_alt)}</td><td>${esc(a.cuit_alt)||'—'}</td><td>${a.id_persona_juridica?'Jurídica':'Física'}</td></tr>`;});
+      h += '</table><div class="foot">Uso puntual en pantalla — Ley 25.326.</div>';
+    }
   }
   h += '<div style="margin-top:14px"><strong style="font-size:12px;color:var(--dim)">PATRIMONIO / CATALOGACIÓN</strong>';
   if(patrim?.error) h += `<div class="err">${esc(patrim.error)}</div>`;
