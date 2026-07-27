@@ -127,6 +127,7 @@
   <div class="card c6" id="card-norma"><h2>Normativa Urbana <span class="src">IDECOR / Ord. 8256</span></h2><div class="body"></div></div>
   <div class="card c6" id="card-extra"><h2>Titular · Patrimonio <span class="src">Muni capa 5 / IDECOR</span></h2><div class="body"></div></div>
   <div class="card c12" id="card-docs"><h2>Documentos oficiales <span class="src">solucionesgis.cordoba.gob.ar</span></h2><div class="body"></div></div>
+  <div class="card c12" id="card-ph" style="display:none"><h2>Unidades PH (<span class="n"></span>) <span class="src">Catastro Online + Rentas</span></h2><div class="body"></div></div>
 </main>
 
 <script>
@@ -323,6 +324,9 @@ async function cargarFicha(n, idecorPreFetched){
     edif:    ags('/Catastro/Edificaciones_v2/MapServer/0', {where:`nomenclatu='${n.g}'`, outFields:'superficie,plantas,tipo_sup', returnGeometry:'false'}),
     titular: ags('/vm_parcelas_ph_deuda_202507/MapServer/5', {where:`nomenclatura='${n.s10}'`, outFields:'nombre_alt,cuit_alt,id_persona_fisica,id_persona_juridica', returnGeometry:'false'}),
     rentas:  (RENTAS_PROXY && P.Nro_Cuenta) ? fetch(`${RENTAS_PROXY}/cuenta/${P.Nro_Cuenta}`).then(r=>r.json()) : Promise.resolve(null),
+    unidades: ((P.Estado||'').includes('PH') || P.Cantidad_Cuentas>1)
+      ? fetch(`https://mapascordoba.gob.ar/api/v1/searchservice?&data=%27${n.i16}%27&token=&idmapa=15`).then(r=>r.json())
+      : Promise.resolve(null),
     dirs:    muni38 ? ags('/Catastro/Catastro_capas_v3/MapServer/61', {where:`idparcela=${muni38.attributes.objectid_parcela}`, outFields:'direccioncompleta', returnGeometry:'false'}) : Promise.resolve([]),
     ocup:    cx!=null ? wfs('idecor:normativas_urbanas_ocupacion_v', `INTERSECTS(geom,POINT(${cx} ${cy}))`) : Promise.resolve([]),
     usos:    cx!=null ? wfs('idecor:normativas_urbanas_usos_suelos_v', `INTERSECTS(geom,POINT(${cx} ${cy}))`) : Promise.resolve([]),
@@ -351,6 +355,7 @@ async function cargarFicha(n, idecorPreFetched){
   renderExtra(res.titular, res.patrim, res.rentas);
   renderLados(res.lados, res.calles, ringL);
   renderDocs(res.barrio, res.cpc);
+  renderPH(res.unidades, res.titular);
   renderDirecciones(res.dirs);
   if(res.vecinos && !res.vecinos.error) dibujarVecinos(res.vecinos);
 }
@@ -612,6 +617,58 @@ function renderDocs(barrio, cpc){
       👁️ Street View <small>Fachada y estado del frente desde la calle</small></a>`;
   }
   el.innerHTML = h;
+}
+
+/* ---------- Unidades PH ---------- */
+function hrefDe(v){ return (String(v||'').match(/href='([^']+)'/)||[])[1]||null; }
+let unidadesPH=[];
+function renderPH(sr, capa5){
+  const card=$('#card-ph');
+  const uni = sr?.find?.find?.(f=>f.entity==='Parcela')?.properties?.find(p=>p.name==='Unidades')?.entityList || [];
+  if(!uni.length){ card.style.display='none'; return; }
+  card.style.display='block';
+  // titular/deuda inicial por unidad: padron municipal (solo unidades con deuda), join por nro de PH en obj_dato
+  const m5={};
+  (Array.isArray(capa5)?capa5:[]).forEach(f=>{const a=f.attributes; if(a.obj_dato&&String(a.obj_dato).length>=15) m5[String(a.obj_dato).slice(-5)]={nombre:a.nombre_alt,cuit:a.cuit_alt,deuda:a.total_deuda};});
+  unidadesPH = uni.map(u=>{
+    const m=Object.fromEntries(u.properties.map(p=>[p.name,p.value]));
+    const unidad=String(m['Unidad']??'');
+    const d5=m5[unidad.padStart(5,'0')];
+    return {unidad, cuenta:String(m['Nro. de cuenta']??''), sup:m['Sup. edificada']??'—',
+      rentas:hrefDe(m['Rentas Córdoba']), catastro:hrefDe(m['Catastro Córdoba']), rgp:hrefDe(m['Registro de la Propiedad Córdoba']),
+      titular:d5?.nombre||'', cuit:d5?.cuit||'', deuda:d5?.deuda};
+  }).sort((a,b)=>a.unidad.localeCompare(b.unidad));
+  $('#card-ph h2 .n').textContent = unidadesPH.length;
+  body('#card-ph').innerHTML = `
+    <div style="margin-bottom:10px"><button onclick="consultarTitularesPH()" id="btnTitPH" style="font-size:12px;padding:6px 14px">Consultar titulares y alquiler ref. (${unidadesPH.length} consultas a Rentas)</button></div>
+    <table><tr><th>Unidad</th><th>Cuenta</th><th class="r">Sup. edif.</th><th>Titular</th><th>CUIT</th><th class="r">Alq. ref./mes</th><th class="r">Deuda</th><th>Informes</th></tr>` +
+    unidadesPH.map((u,i)=>`<tr id="ph-${i}">
+      <td><strong>${esc(u.unidad)}</strong></td>
+      <td><code style="font-size:12px">${esc(u.cuenta)}</code></td>
+      <td class="r">${esc(u.sup)}</td>
+      <td class="tit">${esc(u.titular)||'—'}</td>
+      <td class="cuit">${esc(u.cuit)||'—'}</td>
+      <td class="r alq">—</td>
+      <td class="r">${u.deuda!=null?'<span style="color:var(--bad)">'+fmt$(u.deuda)+'</span>':'—'}</td>
+      <td>${u.rentas?`<a href="${u.rentas}" target="_blank" title="Consultar en Rentas">Rentas</a>`:''}${u.catastro?` · <a href="${u.catastro}" target="_blank" title="Informe del inmueble">Catastro</a>`:''}${u.rgp?` · <a href="${u.rgp}" target="_blank" title="Informe de dominio">RGP</a>`:''}</td>
+    </tr>`).join('') + `</table>
+    <div class="foot">Unidades según Catastro Online (IDECOR). Titular/deuda iniciales: padrón municipal 07/2025 (solo unidades con deuda); el botón completa titulares vía Rentas. Ley 25.326: uso puntual en pantalla.</div>`;
+}
+async function consultarTitularesPH(){
+  const btn=$('#btnTitPH');
+  if(!RENTAS_PROXY){ btn.textContent='Falta configurar RENTAS_PROXY'; return; }
+  btn.disabled=true;
+  for(let i=0;i<unidadesPH.length;i++){
+    const u=unidadesPH[i]; btn.textContent=`Consultando ${i+1}/${unidadesPH.length}…`;
+    try{
+      const j=await fetch(`${RENTAS_PROXY}/cuenta/${u.cuenta}`).then(r=>r.json());
+      const d=j?.data||{}; const row=document.getElementById('ph-'+i);
+      if(d.titular){ row.querySelector('.tit').textContent=d.titular; row.querySelector('.cuit').textContent=d.cuit||'—'; }
+      if(d.valor_locativo_residencial) row.querySelector('.alq').textContent='$ '+d.valor_locativo_residencial;
+    }catch(e){}
+    await new Promise(r=>setTimeout(r,250));
+  }
+  btn.textContent='Titulares consultados ✓'; btn.disabled=false;
 }
 
 /* ---------- Mapa ---------- */
