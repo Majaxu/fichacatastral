@@ -109,6 +109,14 @@
     <input type="checkbox" id="chkLogo"> Logo
   </label>
 </header>
+<div id="gate" style="display:none; position:fixed; inset:0; background:var(--bg); z-index:2000; align-items:center; justify-content:center;">
+  <div style="background:var(--card); border:1px solid var(--border); border-radius:14px; padding:36px 32px; width:330px; text-align:center;">
+    <div style="color:var(--dim); font-size:13px; margin-bottom:16px">Acceso restringido — ingresá tu clave</div>
+    <input id="clave" type="password" autocomplete="off" style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--txt); padding:10px 12px; border-radius:8px; font-size:15px; text-align:center; box-sizing:border-box" onkeydown="if(event.key==='Enter')validarClave()">
+    <button id="gate-btn" onclick="validarClave()" style="width:100%; margin-top:12px">Entrar</button>
+    <div id="gate-msg" style="color:var(--bad); font-size:12px; margin-top:10px; min-height:16px"></div>
+  </div>
+</div>
 <div id="print-head" style="display:none">
   <img id="print-logo-img" alt="" style="display:none;height:48px;max-width:260px;object-fit:contain;margin:0 auto 28px">
   <div id="print-sub" style="font-size:12px;margin-bottom:12px;text-align:center"></div>
@@ -710,6 +718,26 @@ async function printPdf(mode){
   window.print();
 }
 window.addEventListener('afterprint', ()=>document.body.classList.remove('print-dark','print-logo'));
+
+/* ---------- Candado (claves en Google Sheet vía Apps Script) ---------- */
+const AUTH_URL = 'https://script.google.com/macros/s/AKfycbyr2pbdwvvt7HDFq6hFikkR1OZqmecyZpRqH_iEoas2bHOV3aNEws0rNLIKwfqbrjc2/exec';
+function gateInit(){
+  if(!AUTH_URL) return;
+  if(sessionStorage.getItem('fc_ok')==='1') return;
+  $('#gate').style.display='flex';
+  setTimeout(()=>$('#clave').focus(),100);
+}
+async function validarClave(){
+  const v=$('#clave').value.trim(); if(!v) return;
+  const b=$('#gate-btn'); b.disabled=true; b.textContent='Verificando…'; $('#gate-msg').textContent='';
+  try{
+    const j=await fetch(AUTH_URL,{method:'POST',body:JSON.stringify({clave:v})}).then(r=>r.json());
+    if(j.ok){ sessionStorage.setItem('fc_ok','1'); $('#gate').style.display='none'; }
+    else $('#gate-msg').textContent='Clave incorrecta';
+  }catch(e){ $('#gate-msg').textContent='Error de conexión, reintentá'; }
+  b.disabled=false; b.textContent='Entrar';
+}
+gateInit();
 
 /* Autobúsqueda por querystring: ficha.html?q=... */
 const qsP = new URLSearchParams(location.search).get('q');
