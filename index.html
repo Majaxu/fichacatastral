@@ -285,7 +285,7 @@ function elegirParcela(fs){
 }
 
 /* ============ FICHA ============ */
-let map=null, N=null, centroLL=null;
+let map=null, N=null, centroLL=null, cuentaActual=null;
 
 async function cargarFicha(n, idecorPreFetched){
   N = n;
@@ -327,6 +327,7 @@ async function cargarFicha(n, idecorPreFetched){
 
   // --- Resto en paralelo ---
   const P = idecor?.properties||{};
+  cuentaActual = P.Nro_Cuenta || null;
   const tareas = {
     deuda:   ags('/vm_parcelas_deuda_periodo_202507/MapServer/4', {where:`nomenclatura='${n.s10}'`, outFields:'*', returnGeometry:'false'}),
     edif:    ags('/Catastro/Edificaciones_v2/MapServer/0', {where:`nomenclatu='${n.g}'`, outFields:'superficie,plantas,tipo_sup', returnGeometry:'false'}),
@@ -608,6 +609,14 @@ function renderDocs(barrio, cpc){
   const b = (!barrio?.error && barrio?.length) ? barrio[0].attributes.nombre : null;
   const c = (!cpc?.error && cpc?.length) ? cpc[0].attributes.nombre : null;
   const idb = $('#id-barrio'); if(idb) idb.textContent = `${b||'—'} · CPC ${c||'—'}`;
+  if(cuentaActual){
+    h += `<a class="doclink" href="https://registrocordoba.cba.gov.ar/#/publicidadyConsultas/publicidad?cuenta=${cuentaActual}&origenBusqueda=ID&origenBusquedaID=FR" target="_blank">
+      📜 Informe de dominio — RGP (matrícula)
+      <small>Registro de la Propiedad, cuenta ${cuentaActual} precargada · requiere login CiDi</small></a>
+    <a class="doclink" href="https://www.rentascordoba.gob.ar/gestiones/base-imponible" target="_blank">
+      🧾 Base imponible — Rentas
+      <small>Matrícula y valuación fiscal por cuenta ${cuentaActual} (copiala del panel de arriba)</small></a>`;
+  }
   let h = `<a class="doclink" href="${SOLGIS}/index.php?nomenclatura=${N.manz}" target="_blank">
       📄 Plancheta catastral (plano de manzana ${N.manz})
       <small>Abre el visor oficial con todos los planos disponibles de la manzana (manzana, parcelario, nomenclatura)</small></a>`;
@@ -689,6 +698,7 @@ function renderMapa(idecor, muni38, ring){
     const poly = L.polygon(latlngs,{color:'#4db8ff', weight:2.5, fillOpacity:0.25}).addTo(map);
     map.fitBounds(poly.getBounds().pad(1.2));
     const P = idecor?.properties||{};
+  cuentaActual = P.Nro_Cuenta || null;
     poly.bindPopup(`<b>${N.g}</b><br>${P.desig_oficial||''}<br>${fmtN(P.Superficie_Tierra_Urbana)} m²`);
     $('#map-foot').textContent = `Geometría ${idecor?'IDECOR':'Muni'} (faja 4 → WGS84) · centroide usado para cruces espaciales`;
   } else map.setView([-31.42,-64.19],13);
