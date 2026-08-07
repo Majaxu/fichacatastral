@@ -117,7 +117,9 @@
   .svc.rentas .sname{color:#93a8ff;}
   .svc-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; align-items:stretch;}
   .svc-grid > div{display:flex;}
-  .svc-grid .svc{margin-bottom:0; width:100%; display:flex; flex-direction:column;}
+  .svc-grid .svc{margin-bottom:0; width:100%; height:100%; display:flex; flex-direction:column;}
+  .svc-grid .svc .kv, .svc-grid .svc table{flex-shrink:0;}
+  .svc-grid .svc .foot{margin-top:auto; padding-top:9px;}
   @media screen and (max-width:1000px){ .svc-grid{grid-template-columns:1fr;} }
   .svc .shead{display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:7px;}
   .svc .sname{font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:var(--dim); font-weight:650;}
@@ -521,10 +523,22 @@ function renderDGR(){
   const head = val => `<div class="shead"><span class="sname">Rentas Córdoba — provincial</span>${val}</div>`;
   if(d && d.estado==='aldia'){
     box.innerHTML = `<div class="svc ok">${head('<span class="tag ok">al día</span>')}
-      <div class="foot" style="margin-top:2px">Verificado el ${d.fecha} · <a href="${link}" target="_blank">revisar</a> · <a href="#" onclick="dgrBorrar(${cuentaActual});return false">borrar</a></div></div>`;
+      <div class="kv"><div>Organismo</div><div>Rentas Córdoba (DGR)</div>
+        <div>Cuenta</div><div><code>${cuentaActual}</code></div>
+        <div>Verificado</div><div>${d.fecha}</div></div>
+      <table style="margin-top:9px"><tr><th>Concepto</th><th>Estado</th><th class="r">Importe</th></tr>
+        <tr><td>Impuesto inmobiliario</td><td><span class="tag ok">al día</span></td><td class="r">${fmt$(0)}</td></tr>
+      </table>
+      <div class="foot"><a href="${link}" target="_blank">revisar en Rentas</a> · <a href="#" onclick="dgrBorrar(${cuentaActual});return false">borrar</a></div></div>`;
   } else if(d && d.estado==='deuda'){
     box.innerHTML = `<div class="svc bad">${head(`<span class="sval" style="color:var(--bad)">${fmt$(d.monto)}</span>`)}
-      <div class="foot" style="margin-top:2px">Verificado el ${d.fecha} · <a href="${link}" target="_blank">revisar</a> · <a href="#" onclick="dgrBorrar(${cuentaActual});return false">borrar</a></div></div>`;
+      <div class="kv"><div>Organismo</div><div>Rentas Córdoba (DGR)</div>
+        <div>Cuenta</div><div><code>${cuentaActual}</code></div>
+        <div>Verificado</div><div>${d.fecha}</div></div>
+      <table style="margin-top:9px"><tr><th>Concepto</th><th>Estado</th><th class="r">Importe</th></tr>
+        <tr><td>Impuesto inmobiliario</td><td><span class="tag bad">con deuda</span></td><td class="r">${fmt$(d.monto)}</td></tr>
+      </table>
+      <div class="foot"><a href="${link}" target="_blank">revisar en Rentas</a> · <a href="#" onclick="dgrBorrar(${cuentaActual});return false">borrar</a></div></div>`;
   } else {
     box.innerHTML = `<div class="svc rentas">${head('<span class="tag info">a verificar</span>')}
       <a class="doclink" style="padding:9px 11px" href="${link}" target="_blank">🏛️ Ver estado de la cuenta ${cuentaActual}
@@ -558,6 +572,7 @@ function renderAguas(res){
       <div>Titular</div><div>${esc(d.titular)||'—'}</div>
       <div>Domicilio</div><div>${dir||'—'}${d.localidad?' · '+esc(d.localidad):''}</div>
     </div>
+    <div id="aguas-vacio"></div>
     <div id="aguas-detalle"></div></div>`;
   consultarDeudaAgua(d.numUf);
 }
@@ -587,25 +602,34 @@ async function consultarDeudaAgua(uf){
 
 function renderDeuda(fs){
   const el = body('#card-deuda');
+  const cab = (val) => `<div class="shead"><span class="sname">Municipalidad de Córdoba</span>${val}</div>`;
   let muni;
   if(fs?.error){
-    muni = `<div class="svc pend"><div class="shead"><span class="sname">Municipalidad de Córdoba</span></div>
-      <span class="err">${esc(fs.error)}</span></div>`;
+    muni = `<div class="svc pend">${cab('')}<span class="err">${esc(fs.error)}</span></div>`;
   } else if(!fs?.length){
-    muni = `<div class="svc ok"><div class="shead"><span class="sname">Municipalidad de Córdoba</span>
-        <span class="tag ok">sin deuda</span></div>
-      <div class="foot" style="margin-top:2px">No figura en el padrón de deudores municipal (corte 07/2025).</div></div>`;
+    muni = `<div class="svc ok">${cab('<span class="tag ok">al día</span>')}
+      <div class="kv">
+        <div>Padrón</div><div>Municipalidad de Córdoba</div>
+        <div>Corte</div><div>07/2025</div>
+      </div>
+      <table style="margin-top:9px"><tr><th>Concepto</th><th>Estado</th><th>Desde</th><th class="r">Importe</th></tr>
+        <tr><td>Tasa municipal</td><td><span class="tag ok">sin deuda</span></td><td>—</td><td class="r">${fmt$(0)}</td></tr>
+      </table>
+      <div class="foot">No figura en el padrón de deudores municipal.</div></div>`;
   } else {
     const a = fs[0].attributes;
     const per = String(a.deuda_historica_periodo||'');
-    const perFmt = per.length===7 ? `${per.slice(4)}/${per.slice(0,4)}` : per;
-    muni = `<div class="svc bad"><div class="shead"><span class="sname">Municipalidad de Córdoba</span>
-        <span class="sval" style="color:var(--bad)">${fmt$(a.total_deuda_total)}</span></div>
+    const perFmt = per.length===7 ? `${per.slice(4)}/${per.slice(0,4)}` : (per||'—');
+    const act = a.ultima_actualizacion ? new Date(a.ultima_actualizacion).toLocaleDateString('es-AR') : '—';
+    muni = `<div class="svc bad">${cab(`<span class="sval" style="color:var(--bad)">${fmt$(a.total_deuda_total)}</span>`)}
       <div class="kv">
-        <div>Período más antiguo</div><div>${perFmt}</div>
-        <div>Registros</div><div>${a.cantidad_registros??'—'} (${a.cantidad_con_deuda??'—'} con deuda)</div>
-        <div>Actualizado</div><div>${a.ultima_actualizacion?new Date(a.ultima_actualizacion).toLocaleDateString('es-AR'):'—'}</div>
-      </div></div>`;
+        <div>Padrón</div><div>Municipalidad de Córdoba</div>
+        <div>Actualizado</div><div>${act}</div>
+      </div>
+      <table style="margin-top:9px"><tr><th>Concepto</th><th>Estado</th><th>Desde</th><th class="r">Importe</th></tr>
+        <tr><td>Tasa municipal</td><td><span class="tag bad">vencida</span></td><td>${perFmt}</td><td class="r">${fmt$(a.total_deuda_total)}</td></tr>
+      </table>
+      <div class="foot">${a.cantidad_registros??'—'} registro/s en el padrón (${a.cantidad_con_deuda??'—'} con deuda) · deuda histórica total, corte 07/2025.</div></div>`;
   }
   el.innerHTML = `<div class="svc-grid">
       <div>${muni}</div>
