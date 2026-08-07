@@ -113,6 +113,12 @@
   .svc:last-child{margin-bottom:0;}
   .svc.ok{border-left-color:var(--ok);} .svc.bad{border-left-color:var(--bad);}
   .svc.pend{border-left-color:var(--dim2);} .svc.info{border-left-color:var(--accent);}
+  .svc.rentas{border-left-color:#6c8cff; background:linear-gradient(180deg,rgba(108,140,255,.07) 0%,var(--panel2) 60%);}
+  .svc.rentas .sname{color:#93a8ff;}
+  .svc-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; align-items:stretch;}
+  .svc-grid > div{display:flex;}
+  .svc-grid .svc{margin-bottom:0; width:100%; display:flex; flex-direction:column;}
+  @media screen and (max-width:1000px){ .svc-grid{grid-template-columns:1fr;} }
   .svc .shead{display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:7px;}
   .svc .sname{font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:var(--dim); font-weight:650;}
   .svc .sval{font-size:17px; font-weight:680; letter-spacing:-.3px; font-variant-numeric:tabular-nums;}
@@ -157,6 +163,7 @@
     table{font-size:8.4px;} th{padding:2px 5px; font-size:7.2px;} td{padding:2px 5px;}
     tr:hover td{background:none !important;}
     .svc{padding:7px 9px; margin-bottom:4px; border-radius:7px;}
+    .svc-grid{grid-template-columns:repeat(3,1fr); gap:6px;}
     .svc .sname{font-size:7.4px;} .svc .sval{font-size:11px;} .svc .kv{font-size:8.2px;}
     #map{height:184px;} #map-foot, .foot{display:none;}
     .tiles{grid-template-columns:repeat(3,1fr); gap:4px;}
@@ -206,13 +213,13 @@
     <div class="metrics" id="hero-metrics"></div>
   </section>
   <div class="card c7" id="card-mapa"><h2>Plano del lote</h2><div id="map"></div><div class="foot" id="map-foot"></div></div>
-  <div class="card c5" id="card-deuda"><h2>Deudas y servicios <span class="src">Muni 07/2025 · Rentas · Aguas</span></h2><div class="body"></div></div>
   <div class="card c5" id="card-id"><h2>Identificación <span class="src">IDECOR + Muni</span></h2><div class="body"></div></div>
-  <div class="card c4" id="card-val"><h2>Valuación fiscal <span class="src">IDECOR</span></h2><div class="body"></div></div>
-  <div class="card c3" id="card-lados" style="grid-column:span 3"><h2>Lados y frente <span class="src">Muni 37/43</span></h2><div class="body"></div></div>
+  <div class="card c12" id="card-norma"><h2>Normativa urbana <span class="src">IDECOR / Ord. 8256 · 8133 · 8060</span></h2><div class="body"></div></div>
+  <div class="card c6" id="card-lados"><h2>Lados y frente <span class="src">Muni capas 37/43</span></h2><div class="body"></div></div>
   <div class="card c6" id="card-sup"><h2>Superficies <span class="src">IDECOR vs Muni</span></h2><div class="body"></div></div>
   <div class="card c6" id="card-extra"><h2>Titular · Patrimonio <span class="src">Rentas / IDECOR</span></h2><div class="body"></div></div>
-  <div class="card c12" id="card-norma"><h2>Normativa urbana <span class="src">IDECOR / Ord. 8256 · 8133 · 8060</span></h2><div class="body"></div></div>
+  <div class="card c6" id="card-val"><h2>Valuación fiscal <span class="src">IDECOR</span></h2><div class="body"></div></div>
+  <div class="card c12" id="card-deuda"><h2>Deudas y servicios <span class="src">Muni 07/2025 · Rentas · Aguas Cordobesas</span></h2><div class="body"></div></div>
   <div class="card c12" id="card-docs"><h2>Documentos y enlaces oficiales</h2><div class="body"></div></div>
   <div class="card c12" id="card-ph" style="display:none"><h2>Unidades PH (<span class="n"></span>) <span class="src">Catastro Online + Rentas + Aguas</span></h2><div class="body"></div></div>
 </main>
@@ -511,7 +518,7 @@ function renderDGR(){
   const box = $('#dgr-box'); if(!box || !cuentaActual) return;
   const d = dgrLeer(cuentaActual);
   const link = `https://www.rentascordoba.gob.ar/emision/ver-y-pagar/inmobiliario/${cuentaActual}`;
-  const head = (val,cls) => `<div class="shead"><span class="sname">Rentas Córdoba — provincial</span>${val}</div>`;
+  const head = val => `<div class="shead"><span class="sname">Rentas Córdoba — provincial</span>${val}</div>`;
   if(d && d.estado==='aldia'){
     box.innerHTML = `<div class="svc ok">${head('<span class="tag ok">al día</span>')}
       <div class="foot" style="margin-top:2px">Verificado el ${d.fecha} · <a href="${link}" target="_blank">revisar</a> · <a href="#" onclick="dgrBorrar(${cuentaActual});return false">borrar</a></div></div>`;
@@ -519,14 +526,15 @@ function renderDGR(){
     box.innerHTML = `<div class="svc bad">${head(`<span class="sval" style="color:var(--bad)">${fmt$(d.monto)}</span>`)}
       <div class="foot" style="margin-top:2px">Verificado el ${d.fecha} · <a href="${link}" target="_blank">revisar</a> · <a href="#" onclick="dgrBorrar(${cuentaActual});return false">borrar</a></div></div>`;
   } else {
-    box.innerHTML = `<div class="svc pend">${head('<span class="tag warn">sin verificar</span>')}
-      <a class="doclink" style="padding:9px 11px" href="${link}" target="_blank">🏛️ Consultar cuenta ${cuentaActual} en Rentas
-        <small>Abre el estado real (AL DÍA o saldo), sin login ni captcha</small></a>
-      <div id="dgr-acciones" style="display:flex; gap:6px; align-items:center; margin-top:7px; flex-wrap:wrap">
-        <button onclick="dgrGuardar(${cuentaActual},'aldia')" style="font-size:12px; padding:5px 11px; background:var(--ok); color:#06202f">Marcar al día</button>
-        <input id="dgr-monto" placeholder="o monto adeudado" style="flex:1; min-width:110px; background:var(--bg); border:1px solid var(--line2); color:var(--txt); padding:6px 9px; border-radius:8px; font-size:12px" onkeydown="if(event.key==='Enter')dgrDesdeInput()">
+    box.innerHTML = `<div class="svc rentas">${head('<span class="tag info">a verificar</span>')}
+      <a class="doclink" style="padding:9px 11px" href="${link}" target="_blank">🏛️ Ver estado de la cuenta ${cuentaActual}
+        <small>Abre Rentas y resolvés el captcha ahí: muestra AL DÍA o el saldo</small></a>
+      <div id="dgr-acciones" style="display:flex; gap:6px; align-items:center; margin-top:8px; flex-wrap:wrap">
+        <button onclick="dgrGuardar(${cuentaActual},'aldia')" style="font-size:12px; padding:5px 11px; background:var(--ok); color:#06202f">Está al día</button>
+        <input id="dgr-monto" placeholder="o monto adeudado" style="flex:1; min-width:100px; background:var(--bg); border:1px solid var(--line2); color:var(--txt); padding:6px 9px; border-radius:8px; font-size:12px" onkeydown="if(event.key==='Enter')dgrDesdeInput()">
         <button class="btn-ghost" onclick="dgrDesdeInput()" style="font-size:12px; padding:5px 11px">Guardar</button>
-      </div></div>`;
+      </div>
+      <div class="foot">Rentas exige captcha para consultar deuda; una vez que lo verificás queda guardado acá.</div></div>`;
   }
 }
 
@@ -550,9 +558,7 @@ function renderAguas(res){
       <div>Titular</div><div>${esc(d.titular)||'—'}</div>
       <div>Domicilio</div><div>${dir||'—'}${d.localidad?' · '+esc(d.localidad):''}</div>
     </div>
-    <div id="aguas-detalle"></div>
-    <a class="doclink" style="padding:9px 11px; margin-top:7px" href="${GD}/consulta/${d.numUf}" target="_blank">💧 Ver y pagar en Aguas Cordobesas
-      <small>Abre el detalle completo de la UF ${esc(d.numUf)}</small></a></div>`;
+    <div id="aguas-detalle"></div></div>`;
   consultarDeudaAgua(d.numUf);
 }
 async function consultarDeudaAgua(uf){
@@ -583,7 +589,7 @@ function renderDeuda(fs){
   const el = body('#card-deuda');
   let muni;
   if(fs?.error){
-    muni = `<div class="svc pend"><div class="shead"><span class="sname">Municipalidad</span></div>
+    muni = `<div class="svc pend"><div class="shead"><span class="sname">Municipalidad de Córdoba</span></div>
       <span class="err">${esc(fs.error)}</span></div>`;
   } else if(!fs?.length){
     muni = `<div class="svc ok"><div class="shead"><span class="sname">Municipalidad de Córdoba</span>
@@ -601,7 +607,11 @@ function renderDeuda(fs){
         <div>Actualizado</div><div>${a.ultima_actualizacion?new Date(a.ultima_actualizacion).toLocaleDateString('es-AR'):'—'}</div>
       </div></div>`;
   }
-  el.innerHTML = muni + `<div id="dgr-box"></div><div id="aguas-box"><div class="svc pend"><span class="empty">consultando Aguas…</span></div></div>`;
+  el.innerHTML = `<div class="svc-grid">
+      <div>${muni}</div>
+      <div id="dgr-box"></div>
+      <div id="aguas-box"><div class="svc pend"><span class="empty">consultando Aguas…</span></div></div>
+    </div>`;
 }
 
 function renderValuacion(idecor){
