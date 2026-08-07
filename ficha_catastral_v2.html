@@ -364,7 +364,7 @@ function elegirParcela(fs){
 }
 
 /* ============ FICHA ============ */
-let map=null, N=null, centroLL=null, cuentaActual=null;
+let map=null, N=null, centroLL=null, cuentaActual=null, ufActual=null;
 
 async function cargarFicha(n, idecorPreFetched){
   N = n;
@@ -542,15 +542,41 @@ function renderAguas(res){
         <small>${RENTAS_PROXY?'No se encontró unidad de facturación para esta nomenclatura':'Configurá RENTAS_PROXY para buscar la UF'}</small></a></div>`;
     return;
   }
+  ufActual = d.numUf;
   const dir = [esc(d.calle), esc(d.altura), (d.piso&&d.piso!=='--')?'Piso '+esc(d.piso):'', (d.dpto&&d.dpto!=='--')?'Dpto '+esc(d.dpto):''].filter(Boolean).join(' ');
-  box.innerHTML = `<div class="svc info"><div class="shead"><span class="sname">Aguas Cordobesas</span>
-      <span class="sval">UF ${esc(d.numUf)}</span></div>
+  box.innerHTML = `<div class="svc info" id="svc-aguas"><div class="shead"><span class="sname">Aguas Cordobesas · UF ${esc(d.numUf)}</span>
+      <span class="sval" id="aguas-monto">${spin}</span></div>
     <div class="kv">
       <div>Titular</div><div>${esc(d.titular)||'—'}</div>
       <div>Domicilio</div><div>${dir||'—'}${d.localidad?' · '+esc(d.localidad):''}</div>
     </div>
-    <a class="doclink" style="padding:9px 11px; margin-top:7px" href="${GD}" target="_blank">💧 Ver deuda en Aguas Cordobesas
-      <small>Pegá la UF ${esc(d.numUf)} en Consultar/Pagar</small></a></div>`;
+    <div id="aguas-detalle"></div>
+    <a class="doclink" style="padding:9px 11px; margin-top:7px" href="${GD}/consulta/${d.numUf}" target="_blank">💧 Ver y pagar en Aguas Cordobesas
+      <small>Abre el detalle completo de la UF ${esc(d.numUf)}</small></a></div>`;
+  consultarDeudaAgua(d.numUf);
+}
+async function consultarDeudaAgua(uf){
+  if(!RENTAS_PROXY || !uf) return;
+  const mon=$('#aguas-monto'), det=$('#aguas-detalle'), svc=$('#svc-aguas');
+  try{
+    const j = await fetch(`${RENTAS_PROXY}/agua/${uf}`).then(r=>r.json());
+    if(j.error!==0 || !j.data){ mon.innerHTML='<span class="tag warn">sin dato</span>'; return; }
+    const d=j.data;
+    if(d.totalVencido>0){
+      svc.className='svc bad';
+      mon.innerHTML=`<span style="color:var(--bad)">${fmt$(d.totalVencido)}</span>`;
+    } else {
+      svc.className='svc ok';
+      mon.innerHTML='<span class="tag ok">al día</span>';
+    }
+    const filas=(d.comprobantes||[]).map(c=>`<tr>
+        <td>${esc(c.periodo)}</td>
+        <td>${c.vencido?'<span class="tag bad">vencido</span>':'<span class="tag ok">a vencer</span>'}</td>
+        <td>${esc(c.vencimiento)||'—'}</td>
+        <td class="r">${fmt$(c.importe)}</td></tr>`).join('');
+    det.innerHTML = filas ? `<table style="margin-top:9px"><tr><th>Período</th><th>Estado</th><th>Vencimiento</th><th class="r">Importe</th></tr>${filas}</table>
+      ${d.totalAVencer>0?`<div class="foot">A vencer: ${fmt$(d.totalAVencer)}${d.totalVencido>0?` · Vencido: ${fmt$(d.totalVencido)} (${d.cantVencidos} comprobante/s)`:''}</div>`:''}` : '';
+  }catch(e){ mon.innerHTML='<span class="tag warn">sin dato</span>'; }
 }
 
 function renderDeuda(fs){
@@ -822,7 +848,7 @@ function renderPH(sr, capa5){
   $('#card-ph h2 .n').textContent = unidadesPH.length;
   body('#card-ph').innerHTML = `
     <div style="margin-bottom:12px"><button onclick="consultarTitularesPH()" id="btnTitPH" style="font-size:12.5px;padding:8px 16px">Consultar titulares, alquiler ref. y UF de Aguas (${unidadesPH.length} unidades)</button></div>
-    <table><tr><th>Unidad</th><th>Cuenta</th><th class="r">Sup. edif.</th><th>Titular</th><th>CUIT</th><th class="r">Alq. ref./mes</th><th class="r">Deuda</th><th class="r">UF Aguas</th><th>Informes</th></tr>` +
+    <table><tr><th>Unidad</th><th>Cuenta</th><th class="r">Sup. edif.</th><th>Titular</th><th>CUIT</th><th class="r">Alq. ref./mes</th><th class="r">Deuda</th><th class="r">UF Aguas</th><th class="r">Deuda agua</th><th>Informes</th></tr>` +
     unidadesPH.map((u,i)=>`<tr id="ph-${i}">
       <td><strong>${esc(u.unidad)}</strong></td>
       <td><code style="font-size:12px">${esc(u.cuenta)}</code></td>
@@ -832,6 +858,7 @@ function renderPH(sr, capa5){
       <td class="r alq">—</td>
       <td class="r">${u.deuda!=null?'<span style="color:var(--bad)">'+fmt$(u.deuda)+'</span>':'—'}</td>
       <td class="r uf">—</td>
+      <td class="r ufd">—</td>
       <td>${u.rentas?`<a href="${u.rentas}" target="_blank" title="Consultar en Rentas">Rentas</a>`:''}${u.catastro?` · <a href="${u.catastro}" target="_blank" title="Informe del inmueble">Catastro</a>`:''}${u.rgp?` · <a href="${u.rgp}" target="_blank" title="Informe de dominio">RGP</a>`:''}</td>
     </tr>`).join('') + `</table>
     <div class="foot">Unidades según Catastro Online (IDECOR). Titular/deuda iniciales: padrón municipal 07/2025 (solo unidades con deuda); el botón completa titulares vía Rentas. Ley 25.326: uso puntual en pantalla.</div>`;
@@ -852,7 +879,14 @@ async function consultarTitularesPH(){
     try{
       const nc = N.s10 + String(u.unidad).padStart(5,'0');
       const a=await fetch(`${RENTAS_PROXY}/uf/${nc}`).then(r=>r.json());
-      if(a?.data?.numUf) row.querySelector('.uf').textContent=a.data.numUf;
+      if(a?.data?.numUf){
+        row.querySelector('.uf').textContent=a.data.numUf;
+        try{
+          const g=await fetch(`${RENTAS_PROXY}/agua/${a.data.numUf}`).then(r=>r.json());
+          if(g?.data){ const c=row.querySelector('.ufd');
+            c.innerHTML = g.data.totalVencido>0 ? `<span style="color:var(--bad)">${fmt$(g.data.totalVencido)}</span>` : '<span style="color:var(--ok)">al día</span>'; }
+        }catch(e){}
+      }
     }catch(e){}
     await new Promise(r=>setTimeout(r,250));
   }
