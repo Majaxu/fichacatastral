@@ -104,7 +104,7 @@
   <input id="q" placeholder="Nomenclatura (05-21-008-020 / 0521008020 / 1101010521008020), cuenta de rentas (12 dígitos) o dirección…" onkeydown="if(event.key==='Enter')buscar()">
   <button onclick="buscar()">Buscar</button>
   <button onclick="printPdf('print')" style="background:var(--card2);color:var(--txt);border:1px solid var(--border)" title="PDF en formato claro para imprimir">⬇ PDF Impresión</button>
-  <button onclick="printPdf('screen')" style="background:var(--card2);color:var(--txt);border:1px solid var(--border)" title="PDF con los colores de la pantalla">⬇ PDF Pantalla</button>
+  <button onclick="printPdf('screen')" style="background:var(--card2);color:var(--txt);border:1px solid var(--border)" title="PDF con los mismos colores de la pantalla">⬇ PDF Pantalla</button>
   <label id="logoChk" style="display:flex;align-items:center;gap:5px;color:var(--dim);font-size:12px;cursor:pointer">
     <input type="checkbox" id="chkLogo"> Logo
   </label>
@@ -127,14 +127,14 @@
 
 <main id="ficha">
   <div class="card c8" id="card-id"><h2>Identificación <span class="src">IDECOR + Muni</span></h2><div class="body"></div></div>
-  <div class="card c4" id="card-deuda"><h2>Deuda Municipal <span class="src">Muni 07/2025</span></h2><div class="body"></div></div>
+  <div class="card c4" id="card-deuda"><h2>Deudas <span class="src">Muni 07/2025 + enlaces</span></h2><div class="body"></div></div>
   <div class="card c8" id="card-mapa"><h2>Plano del lote</h2><div id="map"></div><div class="foot" id="map-foot"></div></div>
   <div class="card c4" id="card-val"><h2>Valuación Fiscal <span class="src">IDECOR</span></h2><div class="body"></div></div>
   <div class="card c6" id="card-sup"><h2>Superficies <span class="src">IDECOR vs Muni</span></h2><div class="body"></div></div>
   <div class="card c6" id="card-lados"><h2>Lados y Frente <span class="src">Muni capas 37/43</span></h2><div class="body"></div></div>
   <div class="card c6" id="card-norma"><h2>Normativa Urbana <span class="src">IDECOR / Ord. 8256</span></h2><div class="body"></div></div>
   <div class="card c6" id="card-extra"><h2>Titular · Patrimonio <span class="src">Muni capa 5 / IDECOR</span></h2><div class="body"></div></div>
-  <div class="card c12" id="card-docs"><h2>Documentos oficiales <span class="src">solucionesgis.cordoba.gob.ar</span></h2><div class="body"></div></div>
+  <div class="card c12" id="card-docs"><h2>Documentos oficiales</h2><div class="body"></div></div>
   <div class="card c12" id="card-ph" style="display:none"><h2>Unidades PH (<span class="n"></span>) <span class="src">Catastro Online + Rentas</span></h2><div class="body"></div></div>
 </main>
 
@@ -333,6 +333,7 @@ async function cargarFicha(n, idecorPreFetched){
     edif:    ags('/Catastro/Edificaciones_v2/MapServer/0', {where:`nomenclatu='${n.g}'`, outFields:'superficie,plantas,tipo_sup', returnGeometry:'false'}),
     titular: ags('/vm_parcelas_ph_deuda_202507/MapServer/5', {where:`nomenclatura='${n.s10}'`, outFields:'nombre_alt,cuit_alt,id_persona_fisica,id_persona_juridica', returnGeometry:'false'}),
     rentas:  (RENTAS_PROXY && P.Nro_Cuenta) ? fetch(`${RENTAS_PROXY}/cuenta/${P.Nro_Cuenta}`).then(r=>r.json()) : Promise.resolve(null),
+    aguas:   RENTAS_PROXY ? fetch(`${RENTAS_PROXY}/uf/${n.s10}00000`).then(r=>r.json()) : Promise.resolve(null),
     unidades: ((P.Estado||'').includes('PH') || P.Cantidad_Cuentas>1)
       ? fetch(`https://mapascordoba.gob.ar/api/v1/searchservice?&data=%27${n.i16}%27&token=&idmapa=15`).then(r=>r.json())
       : Promise.resolve(null),
@@ -359,6 +360,8 @@ async function cargarFicha(n, idecorPreFetched){
   await Promise.all(Object.entries(tareas).map(async ([k,p])=>{ try{res[k]=await p;}catch(e){res[k]={error:e.message};} }));
 
   renderDeuda(res.deuda);
+  renderDGR();
+  renderAguas(res.aguas);
   renderSuperficies(P, res.edif, muni38);
   renderNormativa(res.ocup, res.usos, res.fracc);
   renderExtra(res.titular, res.patrim, res.rentas);
@@ -399,12 +402,75 @@ function renderDirecciones(dirs){
   el.innerHTML = unicas.slice(0,4).map(esc).join('<br>') + (unicas.length>4?` <span class="empty">(+${unicas.length-4})</span>`:'');
 }
 
+/* ---------- Deuda provincial (DGR): consulta manual recordada por cuenta ---------- */
+const dgrKey = c => 'fc_dgr_'+c;
+function dgrLeer(c){ try{ return JSON.parse(localStorage.getItem(dgrKey(c))||'null'); }catch(e){ return null; } }
+function dgrGuardar(c, estado, monto){
+  localStorage.setItem(dgrKey(c), JSON.stringify({estado, monto: monto??null, fecha: new Date().toISOString().slice(0,10)}));
+  renderDGR();
+  renderAguas(res.aguas);
+}
+function dgrBorrar(c){ localStorage.removeItem(dgrKey(c)); renderDGR(); }
+function dgrDesdeInput(){
+  const v = ($('#dgr-monto')?.value||'').replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace(',','.');
+  const n = parseFloat(v);
+  if(!isNaN(n) && n>0) dgrGuardar(cuentaActual,'deuda',n);
+}
+function renderDGR(){
+  const box = $('#dgr-box'); if(!box || !cuentaActual) return;
+  const d = dgrLeer(cuentaActual);
+  const link = `https://www.rentascordoba.gob.ar/emision/ver-y-pagar/inmobiliario/${cuentaActual}`;
+  if(d && d.estado==='aldia'){
+    box.innerHTML = `<div class="big" style="color:var(--ok)">Provincial: al día</div>
+      <div class="foot" style="display:block">Verificado el ${d.fecha} · <a href="${link}" target="_blank">revisar</a> · <a href="#" onclick="dgrBorrar(${cuentaActual});return false">borrar</a></div>`;
+  } else if(d && d.estado==='deuda'){
+    box.innerHTML = `<div class="big" style="color:var(--bad)">${fmt$(d.monto)}</div>
+      <div class="foot" style="display:block">Provincial · verificado el ${d.fecha} · <a href="${link}" target="_blank">revisar</a> · <a href="#" onclick="dgrBorrar(${cuentaActual});return false">borrar</a></div>`;
+  } else {
+    box.innerHTML = `<a class="doclink" href="${link}" target="_blank">
+        🏛️ Consultar en Rentas — cuenta ${cuentaActual}
+        <small>Abre el estado de la cuenta (AL DÍA o saldo), sin login</small></a>
+      <div style="display:flex; gap:6px; align-items:center; margin-top:6px; flex-wrap:wrap">
+        <button onclick="dgrGuardar(${cuentaActual},'aldia')" style="font-size:12px; padding:5px 12px; background:var(--ok); color:#06283d">Está al día</button>
+        <input id="dgr-monto" placeholder="o monto adeudado" style="flex:1; min-width:120px; background:var(--bg); border:1px solid var(--border); color:var(--txt); padding:5px 9px; border-radius:6px; font-size:12px" onkeydown="if(event.key==='Enter')dgrDesdeInput()">
+        <button onclick="dgrDesdeInput()" style="font-size:12px; padding:5px 12px; background:var(--card2); color:var(--txt); border:1px solid var(--border)">Guardar</button>
+      </div>`;
+  }
+}
+
+/* ---------- Aguas Cordobesas: unidad de facturación por nomenclatura ---------- */
+function renderAguas(res){
+  const box = $('#aguas-box'); if(!box) return;
+  const GD = 'https://www.aguascordobesas.com.ar/espacioClientes/seccion/gestionDeuda';
+  const d = (res && !res.error && res.data && res.data.numUf) ? res.data : null;
+  if(!d){
+    box.innerHTML = `<a class="doclink" href="${GD}" target="_blank">💧 Gestión de deuda — Aguas Cordobesas
+      <small>${RENTAS_PROXY?'Sin unidad de facturación para esta nomenclatura':'Configurá RENTAS_PROXY para buscar la UF'}</small></a>`;
+    return;
+  }
+  const dir = [esc(d.calle), esc(d.altura), (d.piso&&d.piso!=='--')?'Piso '+esc(d.piso):'', (d.dpto&&d.dpto!=='--')?'Dpto '+esc(d.dpto):''].filter(Boolean).join(' ');
+  box.innerHTML = `<div class="kv">
+      <div>Unidad de facturación</div><div><strong>${esc(d.numUf)}</strong></div>
+      <div>Titular</div><div>${esc(d.titular)||'—'}</div>
+      <div>Domicilio</div><div>${dir||'—'}${d.localidad?' · '+esc(d.localidad):''}</div>
+    </div>
+    <a class="doclink" style="margin-top:6px" href="${GD}" target="_blank">💧 Ver deuda en Aguas Cordobesas
+      <small>Pegá la UF ${esc(d.numUf)} en Consultar/Pagar</small></a>`;
+}
+
 function renderDeuda(fs){
   const el = body('#card-deuda');
-  if(fs?.error){ el.innerHTML=`<span class="err">${esc(fs.error)}</span>`; return; }
+  const linksExtra = `
+    <div style="margin-top:12px; border-top:1px solid var(--border); padding-top:10px">
+      <strong style="font-size:11px; color:var(--dim)">IMPUESTO PROVINCIAL — RENTAS (DGR)</strong>
+      <div id="dgr-box" style="margin-top:6px"></div>
+      <strong style="font-size:11px; color:var(--dim); display:block; margin-top:12px">AGUAS CORDOBESAS</strong>
+      <div id="aguas-box" style="margin-top:6px"><span class="empty">consultando…</span></div>
+    </div>`;
+  if(fs?.error){ el.innerHTML=`<span class="err">${esc(fs.error)}</span>` + linksExtra; return; }
   if(!fs?.length){
-    el.innerHTML = `<div class="big" style="color:var(--ok)">Sin deuda registrada</div>
-      <div class="foot">La parcela no figura en el padrón de deudores (corte 07/2025). Verificar igualmente en Rentas municipal.</div>`;
+    el.innerHTML = `<div class="big" style="color:var(--ok)">Municipal: sin deuda</div>
+      <div class="foot">No figura en el padrón de deudores municipal (corte 07/2025).</div>` + linksExtra;
     return;
   }
   const a = fs[0].attributes;
@@ -417,7 +483,7 @@ function renderDeuda(fs){
       <div>Registros</div><div>${a.cantidad_registros??'—'} (${a.cantidad_con_deuda??'—'} con deuda)</div>
       <div>Actualizado</div><div>${a.ultima_actualizacion?new Date(a.ultima_actualizacion).toLocaleDateString('es-AR'):'—'}</div>
     </div>
-    <div class="foot">Deuda histórica total según padrón municipal 07/2025.</div>`;
+    <div class="foot">Deuda histórica total según padrón municipal 07/2025.</div>` + linksExtra;
 }
 
 function renderValuacion(idecor){
@@ -609,14 +675,6 @@ function renderDocs(barrio, cpc){
   const b = (!barrio?.error && barrio?.length) ? barrio[0].attributes.nombre : null;
   const c = (!cpc?.error && cpc?.length) ? cpc[0].attributes.nombre : null;
   const idb = $('#id-barrio'); if(idb) idb.textContent = `${b||'—'} · CPC ${c||'—'}`;
-  if(cuentaActual){
-    h += `<a class="doclink" href="https://registrocordoba.cba.gov.ar/#/publicidadyConsultas/publicidad?cuenta=${cuentaActual}&origenBusqueda=ID&origenBusquedaID=FR" target="_blank">
-      📜 Informe de dominio — RGP (matrícula)
-      <small>Registro de la Propiedad, cuenta ${cuentaActual} precargada · requiere login CiDi</small></a>
-    <a class="doclink" href="https://www.rentascordoba.gob.ar/gestiones/base-imponible" target="_blank">
-      🧾 Base imponible — Rentas
-      <small>Matrícula y valuación fiscal por cuenta ${cuentaActual} (copiala del panel de arriba)</small></a>`;
-  }
   let h = `<a class="doclink" href="${SOLGIS}/index.php?nomenclatura=${N.manz}" target="_blank">
       📄 Plancheta catastral (plano de manzana ${N.manz})
       <small>Abre el visor oficial con todos los planos disponibles de la manzana (manzana, parcelario, nomenclatura)</small></a>`;
@@ -626,6 +684,11 @@ function renderDocs(barrio, cpc){
       📋 Planilla complementaria (PDF directo)
       <small>Tabla complementaria de la manzana ${N.manz} — ${esc(b)}, CPC ${esc(c)}</small></a>`;
   } else h += `<div class="empty">Planilla complementaria: no se pudo determinar barrio/CPC.</div>`;
+  if(cuentaActual){
+    h += `<a class="doclink" href="https://www.rentascordoba.gob.ar/gestiones/base-imponible" target="_blank">
+      🧾 Base imponible y Matrícula — Gestiones Rentas
+      <small>Valuación fiscal, matrícula y datos del inmueble por cuenta ${cuentaActual}</small></a>`;
+  }
   if(centroLL){
     const [lat,lon] = centroLL;
     h += `<a class="doclink" href="https://www.google.com/maps?q=${lat.toFixed(6)},${lon.toFixed(6)}" target="_blank">
@@ -657,8 +720,8 @@ function renderPH(sr, capa5){
   }).sort((a,b)=>a.unidad.localeCompare(b.unidad));
   $('#card-ph h2 .n').textContent = unidadesPH.length;
   body('#card-ph').innerHTML = `
-    <div style="margin-bottom:10px"><button onclick="consultarTitularesPH()" id="btnTitPH" style="font-size:12px;padding:6px 14px">Consultar titulares y alquiler ref. (${unidadesPH.length} consultas a Rentas)</button></div>
-    <table><tr><th>Unidad</th><th>Cuenta</th><th class="r">Sup. edif.</th><th>Titular</th><th>CUIT</th><th class="r">Alq. ref./mes</th><th class="r">Deuda</th><th>Informes</th></tr>` +
+    <div style="margin-bottom:10px"><button onclick="consultarTitularesPH()" id="btnTitPH" style="font-size:12px;padding:6px 14px">Consultar titulares, alquiler ref. y UF de Aguas (${unidadesPH.length} unidades)</button></div>
+    <table><tr><th>Unidad</th><th>Cuenta</th><th class="r">Sup. edif.</th><th>Titular</th><th>CUIT</th><th class="r">Alq. ref./mes</th><th class="r">Deuda</th><th class="r">UF Aguas</th><th>Informes</th></tr>` +
     unidadesPH.map((u,i)=>`<tr id="ph-${i}">
       <td><strong>${esc(u.unidad)}</strong></td>
       <td><code style="font-size:12px">${esc(u.cuenta)}</code></td>
@@ -667,6 +730,7 @@ function renderPH(sr, capa5){
       <td class="cuit">${esc(u.cuit)||'—'}</td>
       <td class="r alq">—</td>
       <td class="r">${u.deuda!=null?'<span style="color:var(--bad)">'+fmt$(u.deuda)+'</span>':'—'}</td>
+      <td class="r uf">—</td>
       <td>${u.rentas?`<a href="${u.rentas}" target="_blank" title="Consultar en Rentas">Rentas</a>`:''}${u.catastro?` · <a href="${u.catastro}" target="_blank" title="Informe del inmueble">Catastro</a>`:''}${u.rgp?` · <a href="${u.rgp}" target="_blank" title="Informe de dominio">RGP</a>`:''}</td>
     </tr>`).join('') + `</table>
     <div class="foot">Unidades según Catastro Online (IDECOR). Titular/deuda iniciales: padrón municipal 07/2025 (solo unidades con deuda); el botón completa titulares vía Rentas. Ley 25.326: uso puntual en pantalla.</div>`;
@@ -677,11 +741,17 @@ async function consultarTitularesPH(){
   btn.disabled=true;
   for(let i=0;i<unidadesPH.length;i++){
     const u=unidadesPH[i]; btn.textContent=`Consultando ${i+1}/${unidadesPH.length}…`;
+    const row=document.getElementById('ph-'+i);
     try{
       const j=await fetch(`${RENTAS_PROXY}/cuenta/${u.cuenta}`).then(r=>r.json());
-      const d=j?.data||{}; const row=document.getElementById('ph-'+i);
+      const d=j?.data||{};
       if(d.titular){ row.querySelector('.tit').textContent=d.titular; row.querySelector('.cuit').textContent=d.cuit||'—'; }
       if(d.valor_locativo_residencial) row.querySelector('.alq').textContent='$ '+d.valor_locativo_residencial;
+    }catch(e){}
+    try{
+      const nc = N.s10 + String(u.unidad).padStart(5,'0');
+      const a=await fetch(`${RENTAS_PROXY}/uf/${nc}`).then(r=>r.json());
+      if(a?.data?.numUf) row.querySelector('.uf').textContent=a.data.numUf;
     }catch(e){}
     await new Promise(r=>setTimeout(r,250));
   }
